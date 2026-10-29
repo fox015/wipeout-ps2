@@ -1,6 +1,10 @@
-// PS2 renderer: stubs until stage 3 (2D) and stage 5 (3D).
-// Draw calls do nothing. Textures only record their size, which the UI
-// needs for layout.
+// PS2 renderer, using gsKit for now.
+// Stage 3: 2D only, untextured. Textured 2D draws get a colour derived from
+// their texture index, so each element's layout is visible. 3D is stage 5.
+// Textures only record their size, which the UI needs for layout.
+
+#include <gsKit.h>
+#include <dmaKit.h>
 
 #include "render.h"
 #include "todo_ps2.h"
@@ -17,13 +21,51 @@ mat4_t view_mat = mat4_identity();
 mat4_t mvp_mat = mat4_identity();
 mat4_t vp_mat = mat4_identity();
 
+static GSGLOBAL *gs;
+
+// The game lays out a 640x480 screen; the GS output may have fewer lines.
 static vec2i_t screen_size = {640, 480};
+static float scale_y = 1.0f;
 static vec2i_t texture_sizes[TEXTURES_MAX];
 static uint16_t textures_len;
 
 void render_init(void) {
-	TODO();
+	gs = gsKit_init_global();
+	gs->PSM = GS_PSM_CT32;
+	gs->PSMZ = GS_PSMZ_16S;
+	gs->ZBuffering = GS_SETTING_OFF;
+	gs->DoubleBuffering = GS_SETTING_ON;
+	gs->PrimAlphaEnable = GS_SETTING_ON;
+
+	dmaKit_init(D_CTRL_RELE_OFF, D_CTRL_MFD_OFF, D_CTRL_STS_UNSPEC,
+	            D_CTRL_STD_OFF, D_CTRL_RCYC_8, 1 << DMA_CHANNEL_GIF);
+	dmaKit_chan_init(DMA_CHANNEL_GIF);
+
+	gsKit_init_screen(gs);
+
+	// Normal alpha blending: (Cs - Cd) * As + Cd. gsKit's default,
+	// GS_BLEND_BACK2FRONT, keeps the destination for opaque pixels, so
+	// nothing drawn would show.
+	gsKit_set_primalpha(gs, GS_SETREG_ALPHA(0, 1, 0, 1, 0), 0);
+	scale_y = (float)gs->Height / screen_size.y;
+	printf("GS: %dx%d, interlace %d, field %d\n", gs->Width, gs->Height, gs->Interlace, gs->Field);
+
 	RENDER_NO_TEXTURE = render_texture_create(2, 2, NULL);
+}
+
+// rgba_t to a GS colour: GS alpha 0x80 is fully opaque.
+static u64 gs_color(rgba_t c) {
+	return GS_SETREG_RGBAQ(c.r, c.g, c.b, (c.a + 1) >> 1, 0x00);
+}
+
+// Stand-in for a texture until stage 6: a fixed colour per texture index.
+static rgba_t texture_debug_color(uint16_t texture_index) {
+	uint32_t h = texture_index * 2654435761u;
+	return rgba(64 + (h >> 24) % 160, 64 + (h >> 16) % 160, 64 + (h >> 8) % 160, 255);
+}
+
+static rgba_t rgba_mul(rgba_t a, rgba_t b) {
+	return rgba(a.r * b.r / 255, a.g * b.g / 255, a.b * b.b / 255, a.a * b.a / 255);
 }
 
 void render_cleanup(void) { TODO(); }
@@ -38,8 +80,16 @@ void render_set_resolution(render_resolution_t res) { TODO(); }
 void render_set_post_effect(render_post_effect_t post) { TODO(); }
 vec2i_t render_size(void) { return screen_size; }
 
-void render_frame_prepare(void) { TODO(); }
-void render_frame_end(void) { TODO(); }
+void render_frame_prepare(void) {
+	gsKit_clear(gs, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00));
+}
+
+// Waits for vsync, so the main loop runs at the display rate.
+void render_frame_end(void) {
+	gsKit_sync_flip(gs);
+	gsKit_queue_exec(gs);
+	gsKit_queue_reset(gs->Os_Queue);
+}
 void render_begin_translucent(void) { TODO(); }
 
 void render_set_view(vec3_t pos, vec3_t angles) { TODO(); }
@@ -67,8 +117,19 @@ void render_quad_noxform_noclip(uint16_t texture_index, float *w) { TODO(); }
 void render_tri_noxform_noclip(uint16_t texture_index, float *w) { TODO(); }
 
 void render_push_sprite(vec3_t pos, vec2i_t size, uint32_t color, uint16_t texture) { TODO(); }
-void render_push_2d(vec2i_t pos, vec2i_t size, rgba_t color, uint16_t texture) { TODO(); }
-void render_push_2d_tile(vec2i_t pos, vec2i_t uv_offset, vec2i_t uv_size, vec2i_t size, rgba_t color, uint16_t texture_index) { TODO(); }
+void render_push_2d(vec2i_t pos, vec2i_t size, rgba_t color, uint16_t texture) {
+	render_push_2d_tile(pos, vec2i(0, 0), render_texture_size(texture), size, color, texture);
+}
+
+void render_push_2d_tile(vec2i_t pos, vec2i_t uv_offset, vec2i_t uv_size, vec2i_t size, rgba_t color, uint16_t texture_index) {
+	if (texture_index != RENDER_NO_TEXTURE) {
+		color = rgba_mul(color, texture_debug_color(texture_index));
+	}
+	gsKit_prim_sprite(gs,
+		pos.x, pos.y * scale_y,
+		pos.x + size.x, (pos.y + size.y) * scale_y,
+		0, gs_color(color));
+}
 
 uint16_t render_texture_create(uint32_t width, uint32_t height, uint16_t *pixels) {
 	TODO();

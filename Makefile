@@ -14,8 +14,8 @@ EE_OBJS = \
 	src/wipeout/ship_ai.o src/wipeout/ship_player.o src/wipeout/title.o \
 	src/wipeout/track.o src/wipeout/ui.o src/wipeout/weapon.o
 
-EE_INCS += -Isrc
-EE_LIBS += -ldebug -lm
+EE_INCS += -Isrc -I$(GSKIT)/include
+EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldebug -lm
 
 all: $(EE_BIN)
 
