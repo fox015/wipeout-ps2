@@ -20,3 +20,8 @@ dcload-ip/
 wipeout_kos/
 kos/
 0GDTEX.PVR
+
+# PS2 build outputs and tooling
+*.elf
+pcsx2_output.log
+run_on_host.trigger
