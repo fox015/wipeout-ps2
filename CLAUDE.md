@@ -9,11 +9,11 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Code is still the Dreamcast port: Makefile, KOS dependencies, PVR renderer.
-  No porting work has started. Next up: stage 0 (build tooling) in `ROADMAP.md`.
-- An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed and has
-  been dropped from main. It's kept on the local branch `archive/devcontainer-tooling`.
-  Stage 0 replaces it.
+- Game code is still the Dreamcast port: Makefile, KOS dependencies, PVR renderer.
+- Stage 0 (build tooling) is done: pinned container, `tools/` scripts, and a smoke
+  test that runs in PCSX2. Next up: stage 1 in `ROADMAP.md`.
+- An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
+  on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
 - Game data is not in the repo. It comes from the user's own copy of the original game.
 
 ## How changes land
@@ -69,23 +69,31 @@ Read it before starting work on a stage.
 ## Build environment (macOS, Apple Silicon)
 - No native toolchain is installed (/usr/local/ps2dev does not exist).
   Builds run in Docker through Colima (`colima start --vm-type vz --mount-type virtiofs --cpu 6 --memory 8`).
-- Base image: `ps2dev/ps2dev`, which is now native arm64. Pin a version tag (stage 0).
+- Image: `.devcontainer/Dockerfile`, pinned to `ps2dev/ps2dev:v2.0.0` by digest
+  (native arm64, gcc 15.2.0). It only adds `make`, which the base image lacks.
+  Bump the pin on purpose, never float on `latest`.
 - Compiler: `mips64r5900el-ps2-elf-gcc`. Environment variables: PS2DEV, PS2SDK, GSKIT.
-- Mount the repo at the same path in the container as on the Mac
-  (`-v "$PWD":"$PWD" -w "$PWD"`), so paths in errors and debug info match the host.
+- The repo is mounted at the same path in the container as on the Mac, so paths in
+  errors and debug info match the host. The devcontainer does the same.
 - Builds run from the Mac with `docker run`. The `.elf` lands in the repo folder,
   where PCSX2 (a Mac app) opens it. A devcontainer is only for editor code intelligence.
 
-## Proven workflow to reuse: ~/Development/ps2dev (separate sandbox repo)
-- `build_and_run.sh <dir>`: builds in the container, launches PCSX2
-  (/Applications/PCSX2.app), copies PCSX2's emuLog.txt to pcsx2_output.log,
-  and checks it for a success string. It also watches PCSX2's snaps folder for screenshots.
-  It still uses the old `ps2dev-test` image and a /src mount. Switch to same-path when copying.
-- `host_bridge.sh`: VS Code inside the container writes `run_on_host.trigger`,
-  and this script on the Mac sees it and launches PCSX2.
-- `samples/triangle` renders a gsKit triangle at 59.94fps in PCSX2. It's a known-good reference.
+## Build and run workflow (`tools/`)
+- `tools/build_and_run.sh [--no-build] [--shot] <dir> [expect]`: builds the image from
+  `.devcontainer/`, runs `make` in `<dir>` in the container, restarts PCSX2 with the
+  `.elf`, copies emuLog.txt to `pcsx2_output.log` and waits for `expect` in it.
+  `--shot` asks PCSX2 for a screenshot (F8) after a match.
+- `tools/host_bridge.sh`: run on the Mac. Inside the devcontainer, write a target dir
+  (and optionally an expect string on line 2) to `run_on_host.trigger`, and the bridge
+  runs `build_and_run.sh --no-build` on it.
+- `tools/smoke/`: minimal ps2sdk program. `tools/build_and_run.sh tools/smoke "SMOKE: ok"`
+  proves the whole loop works.
+- Logging: `sio_puts()` reaches PCSX2's emuLog.txt. Plain `printf()` does NOT with
+  the default settings. Sort out logging properly in stage 2.
 - PCSX2 on Mac is an Intel build running under Rosetta. ARMSX2 is a native alternative.
-  PCSX2 needs a BIOS dumped from the user's own PS2 and host filesystem access enabled.
+  PCSX2 uses the user's own BIOS dump, and host filesystem access (HostFs) is enabled.
+- The original sandbox is `~/Development/ps2dev`. Its `samples/triangle` renders a gsKit
+  triangle at 59.94fps, a known-good reference.
 
 ## Display hardware
 - The user's real-hardware display is a Sony SDM-X53 LCD (1024×768 native) via the
@@ -98,7 +106,10 @@ Read it before starting work on a stage.
   EE overview, EE user's manual, EE core user's manual, EE core instruction set,
   VU user's manual, GS user's manual, and hardware restrictions.
 - These are copyrighted Sony documents and this repo is public. Keep them, and any
-  text extracted from them, out of git (stage 0 sets up a gitignored `docs/hw/`).
+  text extracted from them, out of git.
+- `tools/convert_manuals.sh` copies them into the gitignored `docs/hw/` as PDF + text
+  (`pdftotext -layout`). Grep `docs/hw/*.txt` for a register or topic; read PDF pages
+  as images when a table or diagram doesn't survive conversion.
 - There is no IOP, SPU2, SIF, CD/DVD or memory card manual. For those, use ps2sdk's
   IOP module source, PCSX2's emulation source, ps2tek and psx-spx (the IOP is the PS1 CPU).
   Do not go looking for leaked SDK documents.
