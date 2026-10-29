@@ -23,6 +23,12 @@ mat4_t vp_mat = mat4_identity();
 
 static GSGLOBAL *gs;
 
+#if defined(VIDEO_480p)
+#define defined_video_mode GS_MODE_DTV_480P
+#elif defined(VIDEO_vga)
+#define defined_video_mode GS_MODE_VGA_640_60
+#endif
+
 // The game lays out a 640x480 screen; the GS output may have fewer lines.
 static vec2i_t screen_size = {640, 480};
 static float scale_y = 1.0f;
@@ -36,6 +42,18 @@ void render_init(void) {
 	gs->ZBuffering = GS_SETTING_OFF;
 	gs->DoubleBuffering = GS_SETTING_ON;
 	gs->PrimAlphaEnable = GS_SETTING_ON;
+
+	// 480i is gsKit's default (NTSC, interlaced). The others are progressive,
+	// so the full 480 lines are drawn every frame.
+#if defined(VIDEO_480p) || defined(VIDEO_vga)
+	gs->Mode = defined_video_mode;
+	gs->Interlace = GS_NONINTERLACED;
+	gs->Field = GS_FRAME;
+	gs->Width = 640;
+	gs->Height = 480;
+#elif !defined(VIDEO_480i)
+#error "VIDEO must be 480i, 480p or vga"
+#endif
 
 	dmaKit_init(D_CTRL_RELE_OFF, D_CTRL_MFD_OFF, D_CTRL_STS_UNSPEC,
 	            D_CTRL_STD_OFF, D_CTRL_RCYC_8, 1 << DMA_CHANNEL_GIF);
