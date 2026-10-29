@@ -25,3 +25,6 @@ kos/
 *.elf
 pcsx2_output.log
 run_on_host.trigger
+
+# Sony hardware manuals and text extracted from them: copyrighted, local only
+docs/hw/
