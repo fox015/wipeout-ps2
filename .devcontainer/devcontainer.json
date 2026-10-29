@@ -1,0 +1,19 @@
+{
+  "name": "wipeout-ps2",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  // Mount the repo at the same path as on the Mac, so paths in compiler
+  // errors and debug info match the host.
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind",
+  "workspaceFolder": "${localWorkspaceFolder}",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.makefile-tools"
+      ]
+    }
+  },
+  "remoteUser": "root"
+}

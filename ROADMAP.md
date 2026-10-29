@@ -17,7 +17,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 
 | # | Stage | Done when |
 |---|---|---|
-| 0 | Build tooling | A placeholder `main()` builds in the container and prints to PCSX2's log, through `build_and_run.sh` |
+| 0 | Build tooling ✅ | A placeholder `main()` builds in the container and prints to PCSX2's log, through `build_and_run.sh` |
 | 1 | Compiles and links | `wipeout.elf` links, with every PS2 layer stubbed |
 | 2 | Boots headless | Logs show assets loading from `host:` and the frame counter rising, with no crash |
 | 3 | 2D on screen | Title screen and menus visible (untextured) |
