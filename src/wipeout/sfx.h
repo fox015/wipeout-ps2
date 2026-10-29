@@ -44,11 +44,11 @@ typedef enum {
 	SFX_LOOP_PAUSE = (1<<3),
 } sfx_flags_t;
 
-#include <dc/sound/sfxmgr.h>
+#include "../sfx_platform.h"
 
 typedef struct {
 	int chn;
-	sfx_play_data_t data;
+	sfx_platform_t data;
 	sfx_source_t source;
 	sfx_flags_t flags;
 	float pan;
@@ -73,6 +73,8 @@ sfx_t *sfx_play(sfx_source_t source_index);
 sfx_t *sfx_play_at(sfx_source_t source_index, vec3_t pos, vec3_t vel, float volume);
 sfx_t *sfx_reserve_loop(sfx_source_t source_index);
 void sfx_set_position(sfx_t *sfx, vec3_t pos, vec3_t vel, float volume);
+// Push changed volume/pan/pitch of a playing sound to its voice.
+void sfx_update_ex(sfx_t *sfx);
 
 typedef enum {
 	SFX_MUSIC_PAUSED,
