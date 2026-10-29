@@ -1,5 +1,4 @@
 #include <math.h>
-#include <kos.h>
 
 #include "types.h"
 #include "utils.h"
@@ -327,7 +326,7 @@ vec3_t vector_transform(vec4_t a) {
 	float ry = a.y;
 	float rz = a.z;
 
-	mat_trans_single3(rx,ry,rz);
+	mtx_trans3(rx,ry,rz);
 
 	return vec3(rx,ry,rz);
 }
@@ -337,7 +336,7 @@ vec3_t vec3_transform(vec3_t a) {
 	float ry = a.y;
 	float rz = a.z;
 
-	mat_trans_single3(rx,ry,rz);
+	mtx_trans3(rx,ry,rz);
 
 	return vec3(rx,ry,rz);
 }
@@ -404,8 +403,8 @@ void mat4_set_roll_pitch_yaw(mat4_t *mat, vec3_t rot) {
 }
 
 void mat4_translate(mat4_t *mat, vec3_t translation) {
-	mat->m[12] = fipr(mat->m[0], mat->m[4], mat->m[8], mat->m[12], translation.x, translation.y, translation.z, 1);
-	mat->m[13] = fipr(mat->m[1], mat->m[5], mat->m[9], mat->m[13], translation.x, translation.y, translation.z, 1);
-	mat->m[14] = fipr(mat->m[2], mat->m[6], mat->m[10], mat->m[14], translation.x, translation.y, translation.z, 1);
-	mat->m[15] = fipr(mat->m[3], mat->m[7], mat->m[11], mat->m[15], translation.x, translation.y, translation.z, 1);
+	mat->m[12] = dot4(mat->m[0], mat->m[4], mat->m[8], mat->m[12], translation.x, translation.y, translation.z, 1);
+	mat->m[13] = dot4(mat->m[1], mat->m[5], mat->m[9], mat->m[13], translation.x, translation.y, translation.z, 1);
+	mat->m[14] = dot4(mat->m[2], mat->m[6], mat->m[10], mat->m[14], translation.x, translation.y, translation.z, 1);
+	mat->m[15] = dot4(mat->m[3], mat->m[7], mat->m[11], mat->m[15], translation.x, translation.y, translation.z, 1);
 }

@@ -13,6 +13,7 @@
 //   vec3_len(v)              length of v
 //   vec3_len_sq(v)           squared length of v
 //   vec3_normalize(v)        v scaled to length 1
+//   dot4(a,b,c,d, e,f,g,h)   4-component dot product a*e + b*f + c*g + d*h
 //   xform_all_verts(o, i, n) transform n object vertices by current into o;
 //                            returns 1 if all are in front of the near plane
 //   memcpy32(d, s, n)        fast copy: d 32-byte aligned, n a multiple of 32

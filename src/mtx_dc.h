@@ -83,6 +83,8 @@ inline static void mtx_load_mul(const mat4_t *a, const mat4_t *b) {
 
 #define mtx_trans3(x, y, z) mat_trans_single3(x, y, z)
 
+#define dot4(a, b, c, d, e, f, g, h) fipr(a, b, c, d, e, f, g, h)
+
 static inline float vec3_dot(vec3_t a, vec3_t b) {
 	return fipr(a.x, a.y, a.z, 0.0f, b.x, b.y, b.z, 0.0f);
 }
