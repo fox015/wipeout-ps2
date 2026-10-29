@@ -19,7 +19,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 |---|---|---|
 | 0 | Build tooling ✅ | A placeholder `main()` builds in the container and prints to PCSX2's log, through `build_and_run.sh` |
 | 1 | Compiles and links ✅ | `wipeout.elf` links, with every PS2 layer stubbed |
-| 2 | Boots headless | Logs show assets loading from `host:` and the frame counter rising, with no crash |
+| 2 | Boots headless ✅ | Logs show assets loading from `host:` and the frame counter rising, with no crash |
 | 3 | 2D on screen | Title screen and menus visible (untextured) |
 | 4 | Pad input | Can navigate menus and start a race |
 | 5 | 3D untextured | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
@@ -51,8 +51,12 @@ of the first six was checked against a KOS v2.2.1 Dreamcast build.
 8. Docs.
 
 ### 2. Boots headless
-- IOP module loading. Pad, audio, memory card and host file I/O all depend on it.
-- `host:` file I/O for game data, `printf` logging, timing, and the main loop.
+Done in PCSX2: logging to the PCSX2 log, EE-timer timing, a frame counter, and
+game data from `host:`. It reaches the title screen and stays up. Not yet checked
+on real hardware (no ps2link until stage 9).
+- IOP module loading wasn't needed yet: PCSX2's `host:` works with the default
+  modules. It's needed for pad (stage 4), audio, memory card and real-hardware
+  file access.
 
 ### 3. 2D on screen
 - Framebuffers, vsync, `render_push_2d`.
