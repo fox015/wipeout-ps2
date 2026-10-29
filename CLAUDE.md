@@ -9,13 +9,22 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Stage 0 (build tooling) and stage 1 (compiles and links) are done. `make` builds
-  `wipeout.elf` with every PS2 layer stubbed; in PCSX2 it reaches `main` and the
-  first stubs, then exits because there is no game data under `host:` yet.
-  Next up: stage 2 in `ROADMAP.md`.
+- Stages 0–2 are done. `wipeout.elf` boots headless in PCSX2: it loads 24 game
+  files from `host:wipeout/`, reaches the title screen and runs stably, logging a
+  frame count once a second. Rendering, input, sound and saves are stubs.
+  Next up: stage 3 in `ROADMAP.md`.
+- The main loop isn't tied to vsync yet, so headless it runs ~90,000 frames/s.
+- Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
-- Game data is not in the repo. It comes from the user's own copy of the original game.
+- Game data is not in the repo. It's the PS1 data from phoboslab's wipeout-rewrite
+  data zip, unzipped by the user into the gitignored `wipeout/` folder in the repo
+  (`wipeout/common`, `wipeout/textures`, `wipeout/track01`…, music as QOA).
+  PCSX2's `host:` root is the folder the `.elf` is in, so the game reads it as
+  `host:wipeout/...`. Never download or extract game data yourself.
+- Expect at the main menu (stage 4): it loads `wipeout/common/dcpad.bin`, the
+  Dreamcast controller model, which isn't in the data zip (the Dreamcast build copied
+  it in from the repo root). Copy it in or skip the model on PS2.
 
 ## How changes land
 - One branch and one PR per roadmap stage. Inside a PR, each commit does one thing.
@@ -96,11 +105,12 @@ Read it before starting work on a stage.
   runs `build_and_run.sh --no-build` on it.
 - `tools/smoke/`: minimal ps2sdk program. `tools/build_and_run.sh tools/smoke "SMOKE: ok"`
   proves the whole loop works.
-- Logging: `sio_puts()` reaches PCSX2's emuLog.txt. Plain `printf()` does NOT with
-  the default settings, and the game's own `die()`/error messages use it. Sort out
-  logging properly in stage 2. PCSX2 logs each `sio_puts` call as its own line,
-  so build a whole message first (see `ps2_todo()`).
-- Run the game: `tools/build_and_run.sh . "TODO: render_set_resolution"`.
+- Logging: `platform_ps2.c` makes stdout and stderr line-buffered streams that
+  write to the serial port, which PCSX2 copies to emuLog.txt. Use plain `printf()`.
+  (`sio_puts()` appends its own newline, so avoid it for log lines.)
+- Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
+  per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
+  and the game's own `Abort at ...` messages.
 - PCSX2 on Mac is an Intel build running under Rosetta. ARMSX2 is a native alternative.
   PCSX2 uses the user's own BIOS dump, and host filesystem access (HostFs) is enabled.
 - The original sandbox is `~/Development/ps2dev`. Its `samples/triangle` renders a gsKit
