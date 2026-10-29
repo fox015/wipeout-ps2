@@ -14,7 +14,7 @@
 #define TRACK_SEARCH_LOOK_AHEAD 6
 
 typedef struct track_face_t {
-	pvr_vertex_t *verts;
+	render_vertex_t *verts;
 	tris_t tris[2];
 	vec3_t normal;
 	uint8_t flags;
@@ -79,7 +79,7 @@ typedef struct track_t {
 	int32_t total_section_nums;
 	texture_list_t textures;
 	track_face_t *faces;
-	pvr_vertex_t *apvr;
+	render_vertex_t *apvr;
 	section_t *sections;
 	track_pickup_t *pickups;
 } track_t;

@@ -18,7 +18,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | # | Stage | Done when |
 |---|---|---|
 | 0 | Build tooling ✅ | A placeholder `main()` builds in the container and prints to PCSX2's log, through `build_and_run.sh` |
-| 1 | Compiles and links | `wipeout.elf` links, with every PS2 layer stubbed |
+| 1 | Compiles and links ✅ | `wipeout.elf` links, with every PS2 layer stubbed |
 | 2 | Boots headless | Logs show assets loading from `host:` and the frame counter rising, with no crash |
 | 3 | 2D on screen | Title screen and menus visible (untextured) |
 | 4 | Pad input | Can navigate menus and start a race |
@@ -39,12 +39,16 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 - A placeholder ps2sdk target proving the loop: build → `.elf` → PCSX2 → log check.
 
 ### 1. Compiles and links
-Commits, in order:
-1. Replace `pvr_vertex_t` with a neutral `render_vertex_t` (mechanical; still the Dreamcast build).
-2. Move the KOS / `dc/` includes and PVR usage out of the 9 game files and into the
-   platform layer.
-3. ps2sdk Makefile and stub `*_ps2.c` files. Stubs log `TODO: <function>` rather than
-   being commented out, so the logs show what is missing.
+Done. The Dreamcast code went deeper than planned, so it took eight commits. Each
+of the first six was checked against a KOS v2.2.1 Dreamcast build.
+1. Replace `pvr_vertex_t` with a neutral `render_vertex_t` (mechanical).
+2. Move the SH4 matrix code out of game files into `mtx.h`.
+3. Add `render_begin_translucent()` for the opaque-to-translucent switch.
+4. Move the Dreamcast sound code from `wipeout/sfx.c` to `src/sfx_dc.c`.
+5. Remove KOS from `types.h` and game code.
+6. Make `types_dc.c` platform-neutral as `src/types.c`.
+7. ps2sdk Makefile and PS2 stubs; `wipeout.elf` links. Stubs log `TODO: <function>`.
+8. Docs.
 
 ### 2. Boots headless
 - IOP module loading. Pad, audio, memory card and host file I/O all depend on it.

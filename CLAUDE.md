@@ -9,9 +9,10 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Game code is still the Dreamcast port: Makefile, KOS dependencies, PVR renderer.
-- Stage 0 (build tooling) is done: pinned container, `tools/` scripts, and a smoke
-  test that runs in PCSX2. Next up: stage 1 in `ROADMAP.md`.
+- Stage 0 (build tooling) and stage 1 (compiles and links) are done. `make` builds
+  `wipeout.elf` with every PS2 layer stubbed; in PCSX2 it reaches `main` and the
+  first stubs, then exits because there is no game data under `host:` yet.
+  Next up: stage 2 in `ROADMAP.md`.
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
 - Game data is not in the repo. It comes from the user's own copy of the original game.
@@ -29,26 +30,33 @@ Read it before starting work on a stage.
 
 ## Source layout: where the platform seam is
 - `src/wipeout/` holds the game logic from phoboslab. Change it as little as possible.
-- It is NOT fully platform-agnostic. The Dreamcast port leaked into 9 files:
-  - `sfx.c`, `sfx.h`, `track.c`, `object.c`, `ship.c` and `hud.c` include KOS
-    or `dc/` headers.
-  - `hud.c`, `object.c`, `scene.c`, `ship.c`, `track.c`, `track.h` and `main_menu.c`
-    use PVR types. Most of this is the global `pvr_vertex_t vs[5]`, which game code
-    fills before calling `render_tri()` / `render_quad()`.
-  - `object.c` also does some transforms itself (the `render_*_noxform` paths).
-- Dreamcast-specific parts to replace:
-  - `platform_dc.c` → PS2 platform layer (init, timing, main loop, file I/O)
-  - `render_dc.c` → GS renderer (see the architecture section of `ROADMAP.md`)
-  - `types_dc.c`, `asmfuncs.S` (repo root) → SH4-specific code. Rewrite in C
-    first and optimise later.
-  - `vmu.c`, `vmudata.h` → memory card saves (libmc)
-  - `input.c` (Maple/DC pad) → libpad
-  - `sndwav.c` → audsrv / SPU2
-  - `dcpad.bin`, `sonic.raw` (repo root) → Dreamcast assets, not needed
-- Interfaces to implement are in `platform.h`, `render.h`, `system.h`, `input.h`.
+- Since stage 1, no file outside the `*_dc.*` platform files names KOS.
+- Game code fills the global `render_vertex_t vs[5]` (32 bytes per vertex, same layout
+  as the Dreamcast's `pvr_vertex_t`) before calling `render_tri()` / `render_quad()`.
+  `object.c` transforms vertices itself first (the `render_*_noxform` paths).
+- Platform is selected with the compiler's own macros: `_arch_dreamcast` (KOS) and
+  `_EE` (ps2sdk). Used in `mtx.h` and `sfx_platform.h`.
+- Shared seams:
+  - `mtx.h`: the "current matrix" (load once, transform many vectors), fast vector
+    maths, `xform_all_verts`, `memcpy32`. `mtx_dc.h` is SH4 asm/KOS; `mtx_ps2.h` and
+    `mtx_ps2.c` are plain C, to move to VU0 later.
+  - `render.h`, `platform.h`, `system.h`, `input.h`, `wipeout/sfx.h`
+    (per-sound platform state is the opaque `sfx_platform_t`).
+- Platform files: `platform_*.c`, `render_*.c`, `sfx_*.c`, `mtx_*`. The PS2 ones are
+  stubs that call `TODO()` (`todo_ps2.h`), which logs `TODO: <function>` once.
+- Dreamcast-only, not built for PS2: `vmu.c`/`vmudata.h` (→ libmc, stage 8),
+  `sndwav.c` (→ audsrv, stage 7), `asmfuncs.S`, `dcpad.bin`, `sonic.raw`.
+  `input.c` is shared; the Dreamcast pad reading lives in `platform_dc.c` (→ libpad, stage 4).
+- Globals the game reaches with `extern` instead of a header, which each platform must
+  define: `if_to_await`, `HUD_NO_TEXTURE`, `SetShake`, `ShakeScreen`,
+  `last_five_tracks`, `wav_volume`, `view_mat`/`mvp_mat`/`vp_mat`.
+- Builds: `make` is the PS2 build. `make -f Makefile.dc` is the Dreamcast build
+  (KOS v2.2.1); stage 1 kept it compiling at every commit.
 - Known bug: `render_res_to_size()` in `render_dc.c` has 2 entries but the
   `render_resolution_t` enum has 3, so `RENDER_RES_169L` reads out of bounds.
   Nothing uses it yet (`game.c` hard-codes `RENDER_RES_43`).
+- Known bug: `sfx_load()` in `sfx_dc.c` clears `nodes->data` in a loop without
+  indexing, so only node 0 is reset. Harmless on the Dreamcast; don't copy it.
 
 ## PS2 constraints to keep in mind
 - EE CPU: 32 MB RAM. The FPU is single-precision only, so a `double` falls back
@@ -89,7 +97,10 @@ Read it before starting work on a stage.
 - `tools/smoke/`: minimal ps2sdk program. `tools/build_and_run.sh tools/smoke "SMOKE: ok"`
   proves the whole loop works.
 - Logging: `sio_puts()` reaches PCSX2's emuLog.txt. Plain `printf()` does NOT with
-  the default settings. Sort out logging properly in stage 2.
+  the default settings, and the game's own `die()`/error messages use it. Sort out
+  logging properly in stage 2. PCSX2 logs each `sio_puts` call as its own line,
+  so build a whole message first (see `ps2_todo()`).
+- Run the game: `tools/build_and_run.sh . "TODO: render_set_resolution"`.
 - PCSX2 on Mac is an Intel build running under Rosetta. ARMSX2 is a native alternative.
   PCSX2 uses the user's own BIOS dump, and host filesystem access (HostFs) is enabled.
 - The original sandbox is `~/Development/ps2dev`. Its `samples/triangle` renders a gsKit

@@ -1,5 +1,4 @@
 #include <math.h>
-#include <kos.h>
 
 #include "types.h"
 #include "utils.h"
@@ -305,11 +304,11 @@ vec3_t vec3_wrap_angle(vec3_t a) {
 }
 
 float vec3_angle(vec3_t a, vec3_t b) {
-	float dot = vec_dot(a,b);
+	float dot = vec3_dot(a,b);
 
-	float lena = vec_length(a);
+	float lena = vec3_len(a);
 
-	float lenb = vec_length(b);
+	float lenb = vec3_len(b);
 
 	float magnitude = lena * lenb;
 
@@ -322,12 +321,12 @@ float vec3_angle(vec3_t a, vec3_t b) {
 
 // this gets used to resolve ship-ship collisions
 // matrix is pre-loaded because it gets used over multiple calls
-vec3_t vector_transform(vector_t a) {
+vec3_t vector_transform(vec4_t a) {
 	float rx = a.x;
 	float ry = a.y;
 	float rz = a.z;
 
-	mat_trans_single3(rx,ry,rz);
+	mtx_trans3(rx,ry,rz);
 
 	return vec3(rx,ry,rz);
 }
@@ -337,7 +336,7 @@ vec3_t vec3_transform(vec3_t a) {
 	float ry = a.y;
 	float rz = a.z;
 
-	mat_trans_single3(rx,ry,rz);
+	mtx_trans3(rx,ry,rz);
 
 	return vec3(rx,ry,rz);
 }
@@ -350,7 +349,7 @@ vec3_t vec3_project_to_ray(vec3_t p, vec3_t r0, vec3_t r1) {
 
 float vec3_distance_to_plane(vec3_t p, vec3_t plane_pos, vec3_t plane_normal) {
 	float dot_product = vec3_dot(vec3_sub(plane_pos, p), plane_normal);
-	float norm_dot_product = -vec_fipr(plane_normal);
+	float norm_dot_product = -vec3_len_sq(plane_normal);
 	float rndp = copysignf(approx_recip(norm_dot_product), norm_dot_product);
 	return dot_product * rndp;
 }
@@ -404,8 +403,8 @@ void mat4_set_roll_pitch_yaw(mat4_t *mat, vec3_t rot) {
 }
 
 void mat4_translate(mat4_t *mat, vec3_t translation) {
-	mat->m[12] = fipr(mat->m[0], mat->m[4], mat->m[8], mat->m[12], translation.x, translation.y, translation.z, 1);
-	mat->m[13] = fipr(mat->m[1], mat->m[5], mat->m[9], mat->m[13], translation.x, translation.y, translation.z, 1);
-	mat->m[14] = fipr(mat->m[2], mat->m[6], mat->m[10], mat->m[14], translation.x, translation.y, translation.z, 1);
-	mat->m[15] = fipr(mat->m[3], mat->m[7], mat->m[11], mat->m[15], translation.x, translation.y, translation.z, 1);
+	mat->m[12] = dot4(mat->m[0], mat->m[4], mat->m[8], mat->m[12], translation.x, translation.y, translation.z, 1);
+	mat->m[13] = dot4(mat->m[1], mat->m[5], mat->m[9], mat->m[13], translation.x, translation.y, translation.z, 1);
+	mat->m[14] = dot4(mat->m[2], mat->m[6], mat->m[10], mat->m[14], translation.x, translation.y, translation.z, 1);
+	mat->m[15] = dot4(mat->m[3], mat->m[7], mat->m[11], mat->m[15], translation.x, translation.y, translation.z, 1);
 }

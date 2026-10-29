@@ -1,4 +1,5 @@
 #include "../mem.h"
+#include "../mtx.h"
 #include "../utils.h"
 #include "../render.h"
 #include "../system.h"
@@ -150,8 +151,8 @@ void track_load_faces(char *file_name, vec3_t *vertices) {
 
 	g.track.face_count = size / 20; // TRACK_FACE_DATA_SIZE
 	g.track.faces = mem_bump(sizeof(track_face_t) * g.track.face_count);
-	void *trackpvr = mem_bump((sizeof(pvr_vertex_t) * 4 * g.track.face_count) + 32);
-	g.track.apvr = (pvr_vertex_t *)(((uintptr_t)trackpvr + 31) & ~31);
+	void *trackpvr = mem_bump((sizeof(render_vertex_t) * 4 * g.track.face_count) + 32);
+	g.track.apvr = (render_vertex_t *)(((uintptr_t)trackpvr + 31) & ~31);
 
 	uint32_t p = 0;
 	track_face_t *tf = g.track.faces;
@@ -171,12 +172,12 @@ void track_load_faces(char *file_name, vec3_t *vertices) {
 		uint32_t lcol = argb_from_u32(get_u32(bytes, &p));
 
 		const vec2_t *uv = track_uv[flags_is(tf->flags, FACE_FLIP_TEXTURE) ? 1 : 0];
-		pvr_vertex_t *tf_verts = &g.track.apvr[i<<2];
+		render_vertex_t *tf_verts = &g.track.apvr[i<<2];
 		tf->verts = tf_verts;
 
 		// "bottom right"
-		tf_verts[0] = (pvr_vertex_t){
-				.flags = PVR_CMD_VERTEX,
+		tf_verts[0] = (render_vertex_t){
+				.flags = RENDER_VERT,
 				.x = v3.x,
 				.y = v3.y,
 				.z = v3.z,
@@ -186,7 +187,7 @@ void track_load_faces(char *file_name, vec3_t *vertices) {
 				.oargb = 0,
 				};
 		// "bottom left"
-		tf_verts[1] = (pvr_vertex_t){.flags = PVR_CMD_VERTEX,
+		tf_verts[1] = (render_vertex_t){.flags = RENDER_VERT,
 				.x = v2.x,
 				.y = v2.y,
 				.z = v2.z,
@@ -196,8 +197,8 @@ void track_load_faces(char *file_name, vec3_t *vertices) {
 				.oargb = 0,
 				};
 		// "top right"
-		tf_verts[2] = (pvr_vertex_t){
-				.flags = PVR_CMD_VERTEX,
+		tf_verts[2] = (render_vertex_t){
+				.flags = RENDER_VERT,
 				.x = v0.x,
 				.y = v0.y,
 				.z = v0.z,
@@ -207,8 +208,8 @@ void track_load_faces(char *file_name, vec3_t *vertices) {
 				.oargb = 0,
 				},
 		// "top left"
-		tf_verts[3] = (pvr_vertex_t){
-				.flags = PVR_CMD_VERTEX_EOL,
+		tf_verts[3] = (render_vertex_t){
+				.flags = RENDER_VERT_EOL,
 				.x = v1.x,
 				.y = v1.y,
 				.z = v1.z,
@@ -550,11 +551,9 @@ void track_load_sections(char *file_name) {
 	mem_temp_free(bytes);
 }
 
-#include <kos.h>
 
-extern pvr_vertex_t vs[5];
+extern render_vertex_t vs[5];
 
-extern void memcpy32(const void *dst, const void *src, size_t s);
 
 void track_draw_section(section_t *section) {
 	track_face_t *face = g.track.faces + section->face_start;
@@ -604,7 +603,7 @@ void track_draw(camera_t *camera) {
 		section_t *s = &g.track.sections[i];
 		vec3_t diff = vec3_sub(cam_pos, s->center);
 		float cam_dot = vec3_dot(diff, cam_dir);
-		float dist_sq = vec_fipr(diff);
+		float dist_sq = vec3_len_sq(diff);
 
 		if (cam_dot < s->radius &&
 			dist_sq < drawdist

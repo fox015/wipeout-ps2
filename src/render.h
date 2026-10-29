@@ -71,6 +71,8 @@ vec2i_t render_size(void);
 
 void render_frame_prepare(void);
 void render_frame_end(void);
+// Opaque geometry is done; everything drawn after this may be translucent.
+void render_begin_translucent(void);
 
 void render_set_view(vec3_t pos, vec3_t angles);
 void render_set_view_2d(void);

@@ -1,17 +1,16 @@
-#include "../utils.h"
-#include "../mem.h"
-#include "../platform.h"
+#include "utils.h"
+#include "mem.h"
+#include "platform.h"
 #include <kos.h>
 #include <dc/sound/sound.h>
 
-#include "sfx.h"
-#include "game.h"
+#include "wipeout/sfx.h"
+#include "wipeout/game.h"
 
-#include "../sndwav.h"
+#include "sndwav.h"
 
 extern int sfx_from_menu;
 
-void sfx_update_ex(sfx_t *sfx);
 
 #include "dc/sound/aica_comm.h"
 extern int snd_sh4_to_aica(void *packet, uint32_t size);

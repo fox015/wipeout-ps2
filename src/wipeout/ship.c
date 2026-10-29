@@ -1,4 +1,5 @@
 #include "../mem.h"
+#include "../mtx.h"
 #include "../utils.h"
 #include "../system.h"
 
@@ -442,8 +443,7 @@ void ship_draw(ship_t *self, int psec) {
 	object_draw(self->model, self->mat);
 }
 
-#include <kos.h>
-extern pvr_vertex_t vs[5];
+extern render_vertex_t vs[5];
 
 void ship_draw_shadow(ship_t *self, int psec) {
 	if (!psec)
@@ -466,7 +466,7 @@ void ship_draw_shadow(ship_t *self, int psec) {
 	float rpw = approx_recip((float)tsize.x);
 	float rph = approx_recip((float)tsize.y);
 
-	vs[0].flags = PVR_CMD_VERTEX;
+	vs[0].flags = RENDER_VERT;
 	vs[0].x = nose.x;
 	vs[0].y = nose.y;
 	vs[0].z = nose.z;
@@ -475,7 +475,7 @@ void ship_draw_shadow(ship_t *self, int psec) {
 	vs[0].argb = lcol;
 	vs[0].oargb = 0;
 
-	vs[1].flags = PVR_CMD_VERTEX;
+	vs[1].flags = RENDER_VERT;
 	vs[1].x = wngr.x;
 	vs[1].y = wngr.y;
 	vs[1].z = wngr.z;
@@ -484,7 +484,7 @@ void ship_draw_shadow(ship_t *self, int psec) {
 	vs[1].argb = lcol;
 	vs[1].oargb = 0;
 
-	vs[2].flags = PVR_CMD_VERTEX_EOL;
+	vs[2].flags = RENDER_VERT_EOL;
 	vs[2].x = wngl.x;
 	vs[2].y = wngl.y;
 	vs[2].z = wngl.z;
@@ -957,32 +957,9 @@ void ship_collide_with_track(ship_t *self, track_face_t *face) {
 	}
 }
 
-// thanks @FalcoGirgis
-inline static void fast_mat_load(const matrix_t* mtx) {
-    asm volatile(
-        R"(
-            fschg
-            fmov.d    @%[mtx],xd0
-            add        #32,%[mtx]
-            pref    @%[mtx]
-            add        #-(32-8),%[mtx]
-            fmov.d    @%[mtx]+,xd2
-            fmov.d    @%[mtx]+,xd4
-            fmov.d    @%[mtx]+,xd6
-            fmov.d    @%[mtx]+,xd8
-            fmov.d    @%[mtx]+,xd10
-            fmov.d    @%[mtx]+,xd12
-            fmov.d    @%[mtx]+,xd14
-            fschg
-        )"
-        : [mtx] "+r" (mtx)
-        :
-        :
-    );
-}
 bool ship_intersects_ship(ship_t *self, ship_t *other) {
 	// Get 4 points of collision model relative to the camera
-	fast_mat_load(&other->mat->cols);
+	mtx_load(other->mat);
 	vec3_t a = vector_transform(other->collision_model->vertices[0]);
 	vec3_t b = vector_transform(other->collision_model->vertices[1]);
 	vec3_t c = vector_transform(other->collision_model->vertices[2]);
@@ -1002,7 +979,7 @@ bool ship_intersects_ship(ship_t *self, ship_t *other) {
 	int primitives_len = other->collision_model->primitives_len;
 
 	vec3_t p1, p2, p3;
-	fast_mat_load(&self->mat->cols);
+	mtx_load(self->mat);
 	// for all 4 planes of the enemy ship
 	for (int pi = 0; pi < primitives_len; pi++) {
 		int16_t *indices;

@@ -349,7 +349,7 @@ typedef enum {
 typedef struct Object {
 	mat4_t *mat;
 	int16_t vertices_len; // Number of Vertices
-	vector_t *vertices; // Pointer to 3D Points
+	vec4_t *vertices; // Pointer to 3D Points
 
 	int16_t normals_len; // Number of Normals
 	vec3_t *normals; // Pointer to 3D Normals
@@ -364,7 +364,7 @@ typedef struct Object {
 	float radius;
 	struct Object *next; // Next object in list
 
-	vector_t *xform; // storage for transformed object verts
+	vec4_t *xform; // storage for transformed object verts
 }  Object;
 
 typedef union Prm {

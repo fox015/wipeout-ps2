@@ -26,7 +26,6 @@
 #include "game.h"
 #include "particle.h"
 
-void sfx_update_ex(sfx_t *sfx);
 extern void SetShake(float shake);
 
 void ship_player_update_sfx(ship_t *self) {

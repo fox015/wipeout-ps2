@@ -48,8 +48,6 @@ static float shakeCount = 0.0f;
 
 #define RENDER_STATEMAP(w,t,c,bl) (((int)(w) << 1) | ((int)(t) << 2) | ((int)(bl) << 4))
 
-extern void memcpy32(const void *dst, const void *src, size_t s);
-
 // thanks @FalcoGirgis
 inline static void mat_load_apply(const matrix_t* matrix1, const matrix_t* matrix2) {
 unsigned int prefetch_scratch;
@@ -156,7 +154,12 @@ typedef struct {
 float screen_2d_z = -1.0f;
 
 pvr_dr_state_t dr_state;
-pvr_vertex_t vs[5];
+render_vertex_t vs[5];
+
+// render_vertex_t is passed straight to the PVR, so it must match pvr_vertex_t
+_Static_assert(sizeof(render_vertex_t) == sizeof(pvr_vertex_t), "render_vertex_t size");
+_Static_assert(offsetof(render_vertex_t, argb) == offsetof(pvr_vertex_t, argb), "render_vertex_t layout");
+_Static_assert(RENDER_VERT == PVR_CMD_VERTEX && RENDER_VERT_EOL == PVR_CMD_VERTEX_EOL, "render_vertex_t flags");
 void __attribute__((aligned(32))) *ptrs[TEXTURES_MAX] = {0};
 uint8_t __attribute__((aligned(32))) last_mode[TEXTURES_MAX] = {0};
 
@@ -417,6 +420,13 @@ void render_frame_end(void) {
 	screen_2d_z = -1.0f;
 }
 
+// sky and menu backgrounds use the open OP list; close it and open TR
+void render_begin_translucent(void) {
+	pvr_list_finish();
+	pvr_list_begin(PVR_LIST_TR_POLY);
+	pvr_dr_init(&dr_state);
+}
+
 void render_set_view(vec3_t pos, vec3_t angles) {
 	render_set_depth_write(true);
 	render_set_depth_test(true);
@@ -505,7 +515,7 @@ void render_set_cull_backface(bool enabled) {
 static float wout;
 #define cliplerp(__a, __b, __t) ((__a) + (((__b) - (__a))*(__t)))
 
-static void  __attribute__((noinline)) nearz_clip(pvr_vertex_t *v0, pvr_vertex_t *v1, pvr_vertex_t *outv, float w0, float w1) {
+static void  __attribute__((noinline)) nearz_clip(render_vertex_t *v0, render_vertex_t *v1, render_vertex_t *outv, float w0, float w1) {
 #if 0
 	const float d0 = w0 + v0->z;
 	const float d1 = w1 + v1->z;
@@ -554,7 +564,7 @@ void ShakeScreen(void) {
 	}
 }
 
-static inline void perspdiv(pvr_vertex_t *v, float w) {
+static inline void perspdiv(render_vertex_t *v, float w) {
 	const float invw = approx_recip(w);
 	float x = v->x * invw;
 	float y = v->y * invw;
