@@ -2,8 +2,8 @@
 // Saves are stubbed until stage 8.
 
 #include <string.h>
-#include <time.h>
 #include <sio.h>
+#include <timer.h>
 
 #include "platform.h"
 #include "system.h"
@@ -50,9 +50,16 @@ vec2i_t platform_screen_size(void) {
 	return vec2i(640, 480);
 }
 
+// Seconds since the first call, from the EE's bus-clock timer.
 float platform_now(void) {
-	TODO();
-	return (float)clock() / CLOCKS_PER_SEC;
+	static u64 start;
+	u64 now = GetTimerSystemTime();
+	if (!start) {
+		start = now;
+	}
+	u32 sec, usec;
+	TimerBusClock2USec(now - start, &sec, &usec);
+	return (float)sec + (float)usec * 0.000001f;
 }
 
 bool platform_get_fullscreen(void) {
@@ -96,8 +103,17 @@ int main(int argc, char *argv[]) {
 
 	system_init();
 
+	// No display yet (stage 3), so log a frame count once a second instead.
+	uint32_t frames = 0;
+	float next_report = platform_now() + 1.0f;
 	while (!wants_to_exit) {
 		system_update();
+		frames++;
+		float now = platform_now();
+		if (now >= next_report) {
+			printf("frames: %u (t=%.1fs)\n", (unsigned)frames, (double)now);
+			next_report = now + 1.0f;
+		}
 	}
 
 	system_cleanup();
