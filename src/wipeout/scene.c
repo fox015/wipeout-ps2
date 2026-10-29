@@ -118,7 +118,7 @@ void scene_update(void) {
 	}
 }
 
-extern pvr_vertex_t vs[5];
+extern render_vertex_t vs[5];
 extern pvr_dr_state_t dr_state;
 
 void scene_draw(camera_t *camera) {

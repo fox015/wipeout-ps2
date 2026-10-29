@@ -443,7 +443,7 @@ void ship_draw(ship_t *self, int psec) {
 }
 
 #include <kos.h>
-extern pvr_vertex_t vs[5];
+extern render_vertex_t vs[5];
 
 void ship_draw_shadow(ship_t *self, int psec) {
 	if (!psec)
@@ -466,7 +466,7 @@ void ship_draw_shadow(ship_t *self, int psec) {
 	float rpw = approx_recip((float)tsize.x);
 	float rph = approx_recip((float)tsize.y);
 
-	vs[0].flags = PVR_CMD_VERTEX;
+	vs[0].flags = RENDER_VERT;
 	vs[0].x = nose.x;
 	vs[0].y = nose.y;
 	vs[0].z = nose.z;
@@ -475,7 +475,7 @@ void ship_draw_shadow(ship_t *self, int psec) {
 	vs[0].argb = lcol;
 	vs[0].oargb = 0;
 
-	vs[1].flags = PVR_CMD_VERTEX;
+	vs[1].flags = RENDER_VERT;
 	vs[1].x = wngr.x;
 	vs[1].y = wngr.y;
 	vs[1].z = wngr.z;
@@ -484,7 +484,7 @@ void ship_draw_shadow(ship_t *self, int psec) {
 	vs[1].argb = lcol;
 	vs[1].oargb = 0;
 
-	vs[2].flags = PVR_CMD_VERTEX_EOL;
+	vs[2].flags = RENDER_VERT_EOL;
 	vs[2].x = wngl.x;
 	vs[2].y = wngl.y;
 	vs[2].z = wngl.z;

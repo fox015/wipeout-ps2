@@ -27,8 +27,14 @@ typedef union {
 	float cols[4][4];
 } mat4_t;
 
+// Vertex as written by game code, before transform. 32 bytes: flags, x, y, z,
+// u, v, argb, oargb. Track faces and dcpad.bin are stored in this layout.
+typedef pvr_vertex_t render_vertex_t;
+#define RENDER_VERT     PVR_CMD_VERTEX
+#define RENDER_VERT_EOL PVR_CMD_VERTEX_EOL
+
 typedef struct {
-	pvr_vertex_t vertices[3];
+	render_vertex_t vertices[3];
 } tris_t;
 
 #define rgba(R, G, B, A) ((rgba_t){.r = R, .g = G, .b = B, .a = A})

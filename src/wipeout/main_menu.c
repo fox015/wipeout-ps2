@@ -41,12 +41,12 @@ static struct {
 extern int test_en;
 extern int dep_en;
 
-extern pvr_vertex_t vs[5];
+extern render_vertex_t vs[5];
 extern void memcpy32(const void *dst, const void *src, size_t s);
 
 #define DCPAD_NUM_FACES 3021
 
-pvr_vertex_t *model_faces;
+render_vertex_t *model_faces;
 static mat4_t __attribute__((aligned(32))) mat;
 
 static void draw_controller(vec2_t offset, vec3_t pos, float rotation) {
@@ -864,9 +864,9 @@ void main_menu_init(void) {
 	uint32_t dcpad_size;
 	void *objdata = platform_load_asset("wipeout/common/dcpad.bin", &dcpad_size);
 	error_if((dcpad_size != (32*4*DCPAD_NUM_FACES)), "couldnt read full dc pad");
-	void *mfptr = mem_bump((DCPAD_NUM_FACES * sizeof(pvr_vertex_t) * 4)+32);
-	model_faces = (pvr_vertex_t *)(((uintptr_t)mfptr + 31) & ~31);
-	memcpy(model_faces, objdata, DCPAD_NUM_FACES * sizeof(pvr_vertex_t) * 4);
+	void *mfptr = mem_bump((DCPAD_NUM_FACES * sizeof(render_vertex_t) * 4)+32);
+	model_faces = (render_vertex_t *)(((uintptr_t)mfptr + 31) & ~31);
+	memcpy(model_faces, objdata, DCPAD_NUM_FACES * sizeof(render_vertex_t) * 4);
 	mem_temp_free(objdata);
 
 	objects_unpack(models.misc, objects_load("wipeout/common/msdos.prm", image_get_compressed_textures("wipeout/common/msdos.cmp")));

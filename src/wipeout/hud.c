@@ -64,7 +64,7 @@ void hud_load(void) {
 }
 
 #include <kos.h>
-extern pvr_vertex_t vs[5];
+extern render_vertex_t vs[5];
 
 static void hud_draw_speedo_bar(vec2i_t *pos, const speedo_bar_t *a, const speedo_bar_t *b, float f, rgba_t color_override) {
 	rgba_t left_color, right_color;
@@ -101,28 +101,28 @@ static void hud_draw_speedo_bar(vec2i_t *pos, const speedo_bar_t *a, const speed
 	lcol = argb_from_u32_usealpha(rawlcol);
 	rcol = argb_from_u32_usealpha(rawrcol);
 
-	vs[0].flags = PVR_CMD_VERTEX;
+	vs[0].flags = RENDER_VERT;
 	vs[0].x = pos->x + bottom_left.x;
 	vs[0].y = pos->y + bottom_left.y;
 	vs[0].z = 0;
 	vs[0].argb = lcol;
 	vs[0].oargb = 0;
 
-	vs[1].flags = PVR_CMD_VERTEX;
+	vs[1].flags = RENDER_VERT;
 	vs[1].x = pos->x + top_left.x;
 	vs[1].y = pos->y + top_left.y;
 	vs[1].z = 0;
 	vs[1].argb = lcol;
 	vs[1].oargb = 0;
 
-	vs[2].flags = PVR_CMD_VERTEX;
+	vs[2].flags = RENDER_VERT;
 	vs[2].x = pos->x + bottom_right.x;
 	vs[2].y = pos->y + bottom_right.y;
 	vs[2].z = 0;
 	vs[2].argb = rcol;
 	vs[2].oargb = 0;
 
-	vs[3].flags = PVR_CMD_VERTEX_EOL;
+	vs[3].flags = RENDER_VERT_EOL;
 	vs[3].x = pos->x + top_right.x;
 	vs[3].y = pos->y + top_right.y;
 	vs[3].z = 0;
