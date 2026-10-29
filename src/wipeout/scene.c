@@ -51,7 +51,6 @@ void scene_move_oil_pump(Object *obj);
 void scene_update_aurora_borealis(void);
 
 extern global_render_state_t render_state;
-pvr_poly_hdr_t sky_hdr;
 
 void scene_load(const char *base_path, float sky_y_offset) {
 	texture_list_t scene_textures = image_get_compressed_textures(get_path(base_path, "scene.cmp"));
@@ -120,7 +119,6 @@ void scene_update(void) {
 }
 
 extern render_vertex_t vs[5];
-extern pvr_dr_state_t dr_state;
 
 void scene_draw(camera_t *camera) {
 	// Sky
@@ -134,11 +132,7 @@ void scene_draw(camera_t *camera) {
 
 	render_set_depth_write(true);
 
-	// sky rendering uses open OP list
-	// close it and open TR for everything else
-	pvr_list_finish();
- 	pvr_list_begin(PVR_LIST_TR_POLY);
-	pvr_dr_init(&dr_state);
+	render_begin_translucent();
 
 	// scenery/object draw distance for player ship current track section
 	float drawdist = g.track.sections[g.ships[g.pilot].section_num].scenedist;

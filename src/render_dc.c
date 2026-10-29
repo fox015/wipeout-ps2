@@ -417,6 +417,13 @@ void render_frame_end(void) {
 	screen_2d_z = -1.0f;
 }
 
+// sky and menu backgrounds use the open OP list; close it and open TR
+void render_begin_translucent(void) {
+	pvr_list_finish();
+	pvr_list_begin(PVR_LIST_TR_POLY);
+	pvr_dr_init(&dr_state);
+}
+
 void render_set_view(vec3_t pos, vec3_t angles) {
 	render_set_depth_write(true);
 	render_set_depth_test(true);

@@ -909,7 +909,6 @@ void main_menu_init(void) {
 	sfx_music_play(new_index);
 }
 
-extern pvr_dr_state_t dr_state;
 
 void main_menu_update(void) {
 	render_set_view_2d();
@@ -917,9 +916,7 @@ void main_menu_update(void) {
 	render_push_2d(vec2i(0, 0), render_size(), rgba(255,255,255,255), background);
 	render_set_depth_write(true);
 
-	pvr_list_finish();
-	pvr_list_begin(PVR_LIST_TR_POLY);
-	pvr_dr_init(&dr_state);
+	render_begin_translucent();
 
 	menu_update(main_menu);
 }
