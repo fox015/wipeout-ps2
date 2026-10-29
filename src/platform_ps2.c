@@ -1,5 +1,5 @@
 // PS2 platform layer: startup, main loop, timing and file access.
-// Most of it is stubbed until stage 2.
+// Saves are stubbed until stage 8.
 
 #include <string.h>
 #include <time.h>
@@ -20,15 +20,26 @@ static volatile int wants_to_exit = 0;
 // Set by the button remap menu so A/Start register only on press (stage 4).
 int if_to_await = 0;
 
-void ps2_log(const char *msg) {
-	sio_puts(msg);
+// stdout and stderr go to the serial port, which PCSX2 copies to emuLog.txt.
+// Line buffered, so each line reaches the log in one piece.
+static int sio_stream_write(void *cookie, const char *buf, int len) {
+	return sio_write((void *)buf, len);
 }
 
-// One sio_puts per message: PCSX2 logs each call as a separate line.
+static void log_to_sio(void) {
+	sio_init(115200, 0, 0, 0, 0);
+	stdout = fwopen(NULL, sio_stream_write);
+	stderr = fwopen(NULL, sio_stream_write);
+	setvbuf(stdout, NULL, _IOLBF, 0);
+	setvbuf(stderr, NULL, _IOLBF, 0);
+}
+
+void ps2_log(const char *msg) {
+	fputs(msg, stdout);
+}
+
 void ps2_todo(const char *func) {
-	char msg[128];
-	snprintf(msg, sizeof(msg), "TODO: %s\n", func);
-	sio_puts(msg);
+	printf("TODO: %s\n", func);
 }
 
 void platform_exit(void) {
@@ -77,8 +88,8 @@ uint32_t platform_store_userdata(const char *name, void *bytes, int32_t len) {
 }
 
 int main(int argc, char *argv[]) {
-	sio_init(115200, 0, 0, 0, 0);
-	ps2_log("wipeout-ps2: main\n");
+	log_to_sio();
+	printf("wipeout-ps2: main\n");
 
 	// Room for concatenating the asset and userdata paths with file names.
 	temp_path = mem_bump(max(strlen(path_assets), strlen(path_userdata)) + 64);
