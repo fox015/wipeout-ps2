@@ -20,7 +20,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 0 | Build tooling ✅ | A placeholder `main()` builds in the container and prints to PCSX2's log, through `build_and_run.sh` |
 | 1 | Compiles and links ✅ | `wipeout.elf` links, with every PS2 layer stubbed |
 | 2 | Boots headless ✅ | Logs show assets loading from `host:` and the frame counter rising, with no crash |
-| 3 | 2D on screen | Title screen and menus visible (untextured) |
+| 3 | 2D on screen ✅ | Title screen and menus visible (untextured) |
 | 4 | Pad input | Can navigate menus and start a race |
 | 5 | 3D untextured | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
 | 6 | Textures and blending | The game looks right |
@@ -59,16 +59,20 @@ on real hardware (no ps2link until stage 9).
   file access.
 
 ### 3. 2D on screen
-- Framebuffers, vsync, `render_push_2d`.
-- Display modes: 480i, 480p and VGA 640×480@60, each with 4:3 or anamorphic 16:9.
-  Anamorphic means the same framebuffer and a 16:9 projection, at no VRAM cost.
-  HUD/2D needs aspect correction. Drop the Dreamcast-only letterbox mode and fix the
-  out-of-bounds bug in `render_res_to_size()`.
+Done in PCSX2: gsKit setup, vsync (60fps), `render_push_2d` as flat rectangles with
+stand-in colours per texture, and `make VIDEO=480i|480p|vga`. Still to check on real
+hardware, including a thin black band at the bottom in VGA mode under PCSX2.
+- 16:9 moved to stage 5: the Dreamcast port's letterbox mode (640×360) is checked in
+  about a dozen places in menu and HUD code, and anamorphic needs its own layout and
+  projection, which can only be judged with 3D on screen.
 
 ### 4. Pad input
 - libpad. Small (`input.c` is about 300 lines) and needed to reach a race to test stage 5.
 
 ### 5. 3D untextured
+- Anamorphic 16:9 (moved from stage 3): same framebuffer, 16:9 projection, HUD/2D
+  aspect correction. Replace the Dreamcast-only letterbox mode and fix the
+  out-of-bounds bug in `render_res_to_size()`.
 - CPU transform, perspective, and near-plane clipping. The GS doesn't clip geometry,
   only scissors pixels, within a 4096×4096 guard band in 12.4 fixed point.
 - Z-buffer. Follow the depth-test restriction in `CLAUDE.md`.
