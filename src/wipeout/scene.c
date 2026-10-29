@@ -1,4 +1,5 @@
 #include "../mem.h"
+#include "../mtx.h"
 #include "../utils.h"
 #include "../system.h"
 
@@ -152,7 +153,7 @@ void scene_draw(camera_t *camera) {
 	while (object) {
 		vec3_t diff = vec3_sub(cam_pos, object->origin);
 		float cam_dot = vec3_dot(diff, cam_dir);
-		float dist_sq = vec_fipr(diff);
+		float dist_sq = vec3_len_sq(diff);
 		if (
 			cam_dot < object->radius &&
 			dist_sq < drawdist

@@ -1,4 +1,5 @@
 #include "../mem.h"
+#include "../mtx.h"
 #include "../utils.h"
 #include "../render.h"
 #include "../system.h"
@@ -554,7 +555,6 @@ void track_load_sections(char *file_name) {
 
 extern render_vertex_t vs[5];
 
-extern void memcpy32(const void *dst, const void *src, size_t s);
 
 void track_draw_section(section_t *section) {
 	track_face_t *face = g.track.faces + section->face_start;
@@ -604,7 +604,7 @@ void track_draw(camera_t *camera) {
 		section_t *s = &g.track.sections[i];
 		vec3_t diff = vec3_sub(cam_pos, s->center);
 		float cam_dot = vec3_dot(diff, cam_dir);
-		float dist_sq = vec_fipr(diff);
+		float dist_sq = vec3_len_sq(diff);
 
 		if (cam_dot < s->radius &&
 			dist_sq < drawdist

@@ -1,4 +1,5 @@
 #include "../types.h"
+#include "../mtx.h"
 #include "../mem.h"
 #include "../render.h"
 #include "../utils.h"
@@ -695,7 +696,6 @@ void emplace_ssp(uint8_t *p, mat4_t *mat, vector_t *v) {
 static void (*quadfunc)(uint16_t texture_index, float *w);
 static void (*trifunc)(uint16_t texture_index, float *w);
 
-int xform_all_verts(vector_t *output, vector_t *input, int c);
 
 void object_draw(Object *object, mat4_t *mat) {
 	vector_t *vertex = object->xform;

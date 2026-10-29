@@ -1,4 +1,5 @@
 #include "../utils.h"
+#include "../mtx.h"
 #include "../system.h"
 #include "../mem.h"
 #include "../platform.h"
@@ -42,7 +43,6 @@ extern int test_en;
 extern int dep_en;
 
 extern render_vertex_t vs[5];
-extern void memcpy32(const void *dst, const void *src, size_t s);
 
 #define DCPAD_NUM_FACES 3021
 
