@@ -9,7 +9,10 @@
 //   mtx_load_mul(a, b)       current = a * b
 //   mtx_trans3(x, y, z)      transform (x, y, z, 1) by current and divide by w,
 //                            in place (x, y and z must be lvalues)
+//   vec3_dot(a, b)           dot product
+//   vec3_len(v)              length of v
 //   vec3_len_sq(v)           squared length of v
+//   vec3_normalize(v)        v scaled to length 1
 //   xform_all_verts(o, i, n) transform n object vertices by current into o;
 //                            returns 1 if all are in front of the near plane
 //   memcpy32(d, s, n)        fast copy: d 32-byte aligned, n a multiple of 32
@@ -22,7 +25,7 @@
 #error "mtx.h: no matrix implementation for this platform"
 #endif
 
-int xform_all_verts(vector_t *output, vector_t *input, int count);
+int xform_all_verts(vec4_t *output, vec4_t *input, int count);
 void *memcpy32(void *restrict dst, const void *restrict src, size_t bytes);
 
 #endif

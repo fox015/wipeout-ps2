@@ -64,7 +64,6 @@ void hud_load(void) {
 	render_state.LOAD_UNFILTERED = 0;
 }
 
-#include <kos.h>
 extern render_vertex_t vs[5];
 
 static void hud_draw_speedo_bar(vec2i_t *pos, const speedo_bar_t *a, const speedo_bar_t *b, float f, rgba_t color_override) {

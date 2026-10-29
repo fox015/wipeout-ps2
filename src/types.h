@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <kos.h>
 
 typedef struct rgba_t {
 	uint8_t r, g, b, a;
@@ -20,7 +19,13 @@ typedef struct {
 	int32_t x, y;
 } vec2i_t;
 
-typedef vec3f_t vec3_t;
+typedef struct {
+	float x, y, z;
+} vec3_t;
+
+typedef struct {
+	float x, y, z, w;
+} vec4_t;
 
 typedef union {
 	float m[16];
@@ -29,9 +34,16 @@ typedef union {
 
 // Vertex as written by game code, before transform. 32 bytes: flags, x, y, z,
 // u, v, argb, oargb. Track faces and dcpad.bin are stored in this layout.
-typedef pvr_vertex_t render_vertex_t;
-#define RENDER_VERT     PVR_CMD_VERTEX
-#define RENDER_VERT_EOL PVR_CMD_VERTEX_EOL
+typedef struct {
+	uint32_t flags;
+	float x, y, z;
+	float u, v;
+	uint32_t argb, oargb;
+} render_vertex_t;
+
+// flags: RENDER_VERT_EOL marks the last vertex of a polygon
+#define RENDER_VERT     0xe0000000
+#define RENDER_VERT_EOL 0xf0000000
 
 typedef struct {
 	render_vertex_t vertices[3];
@@ -56,6 +68,8 @@ typedef struct {
 		0, 0, 1, 0, \
 		0, 0, 0, 1 \
 	)
+
+#define F_PI 3.1415926f
 
 #define quarterpi_i754 0.785398185253143310546875f
 #define halfpi_i754 1.57079637050628662109375f
@@ -140,25 +154,12 @@ static inline vec3_t vec3_divf(vec3_t a, float f) {
 	);
 }
 
-static inline float vec3_len(vec3_t a) {
-	return vec_length(a);
-}
-
 static inline vec3_t vec3_cross(vec3_t a, vec3_t b) {
  	return vec3(
 		a.y * b.z - a.z * b.y,
 		a.z * b.x - a.x * b.z,
 		a.x * b.y - a.y * b.x
 	);
-}
-
-static inline float vec3_dot(vec3_t a, vec3_t b) {
-	return vec_dot(a,b);
-}
-
-static inline vec3_t vec3_normalize(vec3_t a) {
-	// this is only used in one place and it is ok to modify in-place
-	return vec_normalize(a);
 }
 
 static inline float wrap_angle(float a) {
@@ -177,18 +178,20 @@ uint32_t argb_from_u32_alpha(uint32_t v, uint8_t a);
 uint32_t argb_from_u32_usealpha(uint32_t v);
 float vec3_angle(vec3_t a, vec3_t b);
 vec3_t vec3_wrap_angle(vec3_t a);
-vec3_t vec3_normalize(vec3_t a);
 vec3_t vec3_project_to_ray(vec3_t p, vec3_t r0, vec3_t r1);
 float vec3_distance_to_plane(vec3_t p, vec3_t plane_pos, vec3_t plane_normal);
 vec3_t vec3_reflect(vec3_t incidence, vec3_t normal);
 
 float wrap_angle(float a);
 
-vec3_t vector_transform(vector_t a);
+vec3_t vector_transform(vec4_t a);
 vec3_t vec3_transform(vec3_t a);
 void mat4_set_translation(mat4_t *mat, vec3_t pos);
 void mat4_set_yaw_pitch_roll(mat4_t *m, vec3_t rot);
 void mat4_set_roll_pitch_yaw(mat4_t *mat, vec3_t rot);
 void mat4_translate(mat4_t *mat, vec3_t translation);
+
+// vec3_len, vec3_dot, vec3_normalize and the current-matrix operations
+#include "mtx.h"
 
 #endif

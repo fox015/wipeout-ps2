@@ -4,7 +4,8 @@
 // Dreamcast implementation of mtx.h: the SH4's XMTRX register bank.
 // xform_all_verts and memcpy32 are in asmfuncs.S.
 
-#include <kos.h>
+#include <dc/fmath.h>
+#include <dc/matrix.h>
 
 // thanks @FalcoGirgis
 inline static void mtx_load(const mat4_t *m) {
@@ -82,6 +83,21 @@ inline static void mtx_load_mul(const mat4_t *a, const mat4_t *b) {
 
 #define mtx_trans3(x, y, z) mat_trans_single3(x, y, z)
 
-#define vec3_len_sq(v) vec_fipr(v)
+static inline float vec3_dot(vec3_t a, vec3_t b) {
+	return fipr(a.x, a.y, a.z, 0.0f, b.x, b.y, b.z, 0.0f);
+}
+
+static inline float vec3_len_sq(vec3_t a) {
+	return fipr_magnitude_sqr(a.x, a.y, a.z, 0.0f);
+}
+
+static inline float vec3_len(vec3_t a) {
+	return sqrtf(vec3_len_sq(a));
+}
+
+static inline vec3_t vec3_normalize(vec3_t a) {
+	float factor = 1.0f / vec3_len(a);
+	return vec3(a.x * factor, a.y * factor, a.z * factor);
+}
 
 #endif

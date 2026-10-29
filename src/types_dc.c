@@ -305,11 +305,11 @@ vec3_t vec3_wrap_angle(vec3_t a) {
 }
 
 float vec3_angle(vec3_t a, vec3_t b) {
-	float dot = vec_dot(a,b);
+	float dot = vec3_dot(a,b);
 
-	float lena = vec_length(a);
+	float lena = vec3_len(a);
 
-	float lenb = vec_length(b);
+	float lenb = vec3_len(b);
 
 	float magnitude = lena * lenb;
 
@@ -322,7 +322,7 @@ float vec3_angle(vec3_t a, vec3_t b) {
 
 // this gets used to resolve ship-ship collisions
 // matrix is pre-loaded because it gets used over multiple calls
-vec3_t vector_transform(vector_t a) {
+vec3_t vector_transform(vec4_t a) {
 	float rx = a.x;
 	float ry = a.y;
 	float rz = a.z;
@@ -350,7 +350,7 @@ vec3_t vec3_project_to_ray(vec3_t p, vec3_t r0, vec3_t r1) {
 
 float vec3_distance_to_plane(vec3_t p, vec3_t plane_pos, vec3_t plane_normal) {
 	float dot_product = vec3_dot(vec3_sub(plane_pos, p), plane_normal);
-	float norm_dot_product = -vec_fipr(plane_normal);
+	float norm_dot_product = -vec3_len_sq(plane_normal);
 	float rndp = copysignf(approx_recip(norm_dot_product), norm_dot_product);
 	return dot_product * rndp;
 }

@@ -551,7 +551,6 @@ void track_load_sections(char *file_name) {
 	mem_temp_free(bytes);
 }
 
-#include <kos.h>
 
 extern render_vertex_t vs[5];
 

@@ -443,7 +443,6 @@ void ship_draw(ship_t *self, int psec) {
 	object_draw(self->model, self->mat);
 }
 
-#include <kos.h>
 extern render_vertex_t vs[5];
 
 void ship_draw_shadow(ship_t *self, int psec) {

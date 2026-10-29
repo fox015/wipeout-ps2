@@ -18,7 +18,6 @@
 
 #include "game.h"
 
-#include <kos.h>
 
 static float __attribute__((aligned(32))) w[4];
 extern render_vertex_t vs[5];
@@ -118,11 +117,11 @@ Object *objects_load(char *name, texture_list_t tl) {
 
 		object->radius = 0;
 
-		void *ov = mem_bump((object->vertices_len * sizeof(vector_t))+32);
-		object->vertices = (vector_t *)(((uintptr_t)ov + 31) & ~31);
+		void *ov = mem_bump((object->vertices_len * sizeof(vec4_t))+32);
+		object->vertices = (vec4_t *)(((uintptr_t)ov + 31) & ~31);
 
-		void *ox = mem_bump((object->vertices_len * sizeof(vector_t))+32);
-		object->xform = (vector_t *)(((uintptr_t)ox + 31) & ~31);
+		void *ox = mem_bump((object->vertices_len * sizeof(vec4_t))+32);
+		object->xform = (vec4_t *)(((uintptr_t)ox + 31) & ~31);
 
 		for (int i = 0; i < object->vertices_len; i++) {
 			object->vertices[i].x = get_i16(bytes, &p);
@@ -645,7 +644,7 @@ Object *objects_load(char *name, texture_list_t tl) {
 
 struct SortedSprite_s {
 	uint8_t *ptr;
-	vector_t *vertex;
+	vec4_t *vertex;
 	mat4_t *mat;
 	uint32_t pad;
 };
@@ -685,7 +684,7 @@ void draw_all_sprites(void) {
 	sprites_to_draw = 0;
 }
 
-void emplace_ssp(uint8_t *p, mat4_t *mat, vector_t *v) {
+void emplace_ssp(uint8_t *p, mat4_t *mat, vec4_t *v) {
 	if (sprites_to_draw == 256) return;
 	struct SortedSprite_s *rsp = &sprs[sprites_to_draw++];
 	rsp->ptr = p;
@@ -698,7 +697,7 @@ static void (*trifunc)(uint16_t texture_index, float *w);
 
 
 void object_draw(Object *object, mat4_t *mat) {
-	vector_t *vertex = object->xform;
+	vec4_t *vertex = object->xform;
 	Prm poly = {.primitive = object->primitives};
 	int primitives_len = object->primitives_len;
 

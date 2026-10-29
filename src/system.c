@@ -6,7 +6,6 @@
 #include "utils.h"
 
 #include "wipeout/game.h"
-#include "kos.h"
 
 uint8_t allow_exit;
 
