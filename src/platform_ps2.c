@@ -80,7 +80,9 @@ FILE *platform_open_asset(const char *name, const char *mode) {
 
 uint8_t *platform_load_asset(const char *name, uint32_t *bytes_read) {
 	char *path = strcat(strcpy(temp_path, path_assets), name);
-	return file_load(path, bytes_read);
+	uint8_t *bytes = file_load(path, bytes_read);
+	printf("load: %s (%u bytes)\n", name, (unsigned)*bytes_read);
+	return bytes;
 }
 
 uint8_t *platform_load_userdata(const char *name, uint32_t *bytes_read) {
