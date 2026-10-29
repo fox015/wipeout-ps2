@@ -22,6 +22,8 @@
 
 #if defined(_arch_dreamcast)
 #include "mtx_dc.h"
+#elif defined(_EE)
+#include "mtx_ps2.h"
 #else
 #error "mtx.h: no matrix implementation for this platform"
 #endif

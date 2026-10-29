@@ -7,6 +7,10 @@
 #if defined(_arch_dreamcast)
 #include <dc/sound/sfxmgr.h>
 typedef sfx_play_data_t sfx_platform_t;
+#elif defined(_EE)
+typedef struct {
+	int voice;
+} sfx_platform_t;
 #else
 #error "sfx_platform.h: no sound implementation for this platform"
 #endif
