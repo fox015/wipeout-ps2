@@ -9,11 +9,9 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Stages 0–2 are done. `wipeout.elf` boots headless in PCSX2: it loads 24 game
-  files from `host:wipeout/`, reaches the title screen and runs stably, logging a
-  frame count once a second. Rendering, input, sound and saves are stubs.
-  Next up: stage 3 in `ROADMAP.md`.
-- The main loop isn't tied to vsync yet, so headless it runs ~90,000 frames/s.
+- Stages 0–3 are done. `wipeout.elf` boots to the title screen in PCSX2 at 60fps,
+  drawing 2D as flat rectangles: textures are stand-in colours per texture index
+  until stage 6. 3D, input, sound and saves are stubs. Next up: stage 4.
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -80,6 +78,10 @@ Read it before starting work on a stage.
     4 for PSMCT16, 2 for PSMCT32.
   - Very short loops (6 instructions or fewer including the branch) can misbehave
     on the EE. Check that the toolchain works around this.
+- gsKit gotcha: its default primitive blend, `GS_BLEND_BACK2FRONT`, keeps the
+  destination for opaque pixels, so with `PrimAlphaEnable` on nothing shows.
+  `render_init()` sets normal blending with `gsKit_set_primalpha()` after
+  `gsKit_init_screen()` (setting `gs->PrimAlpha` beforehand had no effect).
 - PCSX2 tolerates timing, DMA and alignment problems that crash real hardware.
   Test on real hardware regularly.
 
@@ -108,6 +110,12 @@ Read it before starting work on a stage.
 - Logging: `platform_ps2.c` makes stdout and stderr line-buffered streams that
   write to the serial port, which PCSX2 copies to emuLog.txt. Use plain `printf()`.
   (`sio_puts()` appends its own newline, so avoid it for log lines.)
+- Display output is a build option: `make VIDEO=480i|480p|vga` (default 480i).
+  `build_and_run.sh` always builds the default; for another mode, run make with
+  VIDEO in the container, then `build_and_run.sh --no-build`.
+- Screenshots: the user granted the Claude app Accessibility permission, so
+  `build_and_run.sh --shot` (F8 to PCSX2) works; read the PNG from
+  `~/Library/Application Support/PCSX2/snaps/`. Screen Recording isn't granted.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
