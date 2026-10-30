@@ -34,7 +34,7 @@
 #define GUARD_BAND 5.0f
 
 // Polygons whose screen-space winding has this sign are back faces.
-#define BACKFACE_SIGN 1.0f
+#define BACKFACE_SIGN -1.0f
 
 global_render_state_t render_state;
 render_vertex_t vs[5];
