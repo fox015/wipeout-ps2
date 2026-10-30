@@ -10,6 +10,7 @@
 #include "utils.h"
 #include "mem.h"
 #include "todo_ps2.h"
+#include "pad_ps2.h"
 
 char *path_assets = "host:";
 char *path_userdata = "host:wipeout/";
@@ -103,12 +104,14 @@ int main(int argc, char *argv[]) {
 	// Room for concatenating the asset and userdata paths with file names.
 	temp_path = mem_bump(max(strlen(path_assets), strlen(path_userdata)) + 64);
 
+	pad_init();
 	system_init();
 
 	// No display yet (stage 3), so log a frame count once a second instead.
 	uint32_t frames = 0;
 	float next_report = platform_now() + 1.0f;
 	while (!wants_to_exit) {
+		pad_update();
 		system_update();
 		frames++;
 		float now = platform_now();

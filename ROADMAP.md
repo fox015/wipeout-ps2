@@ -21,7 +21,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 1 | Compiles and links ✅ | `wipeout.elf` links, with every PS2 layer stubbed |
 | 2 | Boots headless ✅ | Logs show assets loading from `host:` and the frame counter rising, with no crash |
 | 3 | 2D on screen ✅ | Title screen and menus visible (untextured) |
-| 4 | Pad input | Can navigate menus and start a race |
+| 4 | Pad input ✅ | Can navigate menus and start a race |
 | 5 | 3D untextured | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
 | 6 | Textures and blending | The game looks right |
 | 7 | Sound | Sound effects and music in menus and races |
@@ -67,7 +67,10 @@ hardware, including a thin black band at the bottom in VGA mode under PCSX2.
   projection, which can only be judged with 3D on screen.
 
 ### 4. Pad input
-- libpad. Small (`input.c` is about 300 lines) and needed to reach a race to test stage 5.
+Done in PCSX2: libpad with the BIOS pad modules, buttons and sticks mapped by position
+to the Dreamcast layout, and the Dreamcast controller model skipped on PS2. Five Cross
+presses from the title start a race on track02, which runs with the HUD in flat colours.
+Not yet checked with a real pad on a real console.
 
 ### 5. 3D untextured
 - Anamorphic 16:9 (moved from stage 3): same framebuffer, 16:9 projection, HUD/2D
