@@ -41,6 +41,10 @@ Read it before starting work on a stage.
 - Since stage 1, no file outside the `*_dc.*` platform files names KOS.
 - Game code fills the global `render_vertex_t vs[5]` (32 bytes per vertex, same layout
   as the Dreamcast's `pvr_vertex_t`) before calling `render_tri()` / `render_quad()`.
+  It must stay 32-byte aligned like `pvr_vertex_t`: struct sizes such as
+  `track_face_t` (256 bytes) and `memcpy32()` depend on it. Losing the alignment in
+  stage 1 shrank `track_face_t` and broke track physics (the craft tumbled) until
+  it was restored in stage 5.
   `object.c` transforms vertices itself first (the `render_*_noxform` paths).
 - Platform is selected with the compiler's own macros: `_arch_dreamcast` (KOS) and
   `_EE` (ps2sdk). Used in `mtx.h` and `sfx_platform.h`.
