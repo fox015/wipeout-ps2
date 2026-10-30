@@ -57,7 +57,8 @@ static GSGLOBAL *gs;
 #define defined_video_mode GS_MODE_VGA_640_60
 #endif
 
-// The game lays out a 640x480 screen; the GS output may have fewer lines.
+// The game lays out 640x480 (or 640x360 for 16:9); the GS output may have
+// fewer lines. scale_y maps 480 lines to the output.
 static vec2i_t screen_size = {640, 480};
 static float scale_y = 1.0f;
 static vec2i_t texture_sizes[TEXTURES_MAX];
@@ -107,7 +108,7 @@ void render_init(void) {
 
 	gs_packet_init();
 
-	scale_y = (float)gs->Height / screen_size.y;
+	scale_y = (float)gs->Height / 480.0f;
 	printf("GS: %dx%d, interlace %d, field %d, offset %d,%d, zbuf 0x%x\n",
 		gs->Width, gs->Height, gs->Interlace, gs->Field,
 		gs->OffsetX, gs->OffsetY, (unsigned)gs->ZBuffer);
@@ -203,8 +204,11 @@ void render_begin_translucent(void) {}
 // ---------------------------------------------------------------------------
 // Projection and view
 
+// 16:9 is anamorphic, as on the Dreamcast: the game lays out 640x360 and the
+// projection is 16:9, but the output still fills every line, so a 16:9 TV
+// stretches it back to shape. Menu and HUD code check for the 360 height.
 vec2i_t render_res_to_size(render_resolution_t res) {
-	return vec2i(640, 480);
+	return res == RENDER_RES_43 ? vec2i(640, 480) : vec2i(640, 360);
 }
 
 void render_set_screen_size(vec2i_t size) {
@@ -526,9 +530,11 @@ void render_push_2d_tile(vec2i_t pos, vec2i_t uv_offset, vec2i_t uv_size, vec2i_
 	sync_depth_state();
 
 	u64 rgbaq = rgbaq_from(shade(color, texture_index));
+	// From the game's layout height to the 480 lines xyz_from() expects.
+	float sy = 480.0f / screen_size.y;
 	gs_vertex_t corners[2] = {
-		{rgbaq, xyz_from(pos.x, pos.y, 0)},
-		{rgbaq, xyz_from(pos.x + size.x, pos.y + size.y, 0)},
+		{rgbaq, xyz_from(pos.x, pos.y * sy, 0)},
+		{rgbaq, xyz_from(pos.x + size.x, (pos.y + size.y) * sy, 0)},
 	};
 	gs_draw(GS_SET_PRIM(GS_PRIM_SPRITE, 0, 0, 0, 1, 0, 0, 0, 0), corners, 2);
 
