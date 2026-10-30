@@ -44,6 +44,7 @@ extern int dep_en;
 
 extern render_vertex_t vs[5];
 
+#if defined(_arch_dreamcast)
 #define DCPAD_NUM_FACES 3021
 
 render_vertex_t *model_faces;
@@ -75,6 +76,7 @@ static void draw_controller(vec2_t offset, vec3_t pos, float rotation) {
 
 	render_set_screen_position(vec2(0, 0));
 }
+#endif
 
 static void draw_model(Object *model, vec2_t offset, vec3_t pos, float rotation) {
 	render_set_view(vec3(0,0,0), vec3(0, -F_PI, -F_PI));
@@ -153,7 +155,10 @@ static void button_bonus(menu_t *menu, int data) {
 
 static void page_options_draw(menu_t *menu, int data) {
 	switch (data) {
+#if defined(_arch_dreamcast)
+		// The Dreamcast controller model (dcpad.bin) only exists on the Dreamcast.
 		case 0: draw_controller(vec2(0, -0.1), vec3(0, 0, -250), -2.0f * system_cycle_time()); break;
+#endif
 		case 1: draw_model(models.rescue, vec2(0, -0.2), vec3(0, 0, -700), -2.0f * system_cycle_time()); break; // TODO: needs better model
 		case 2: draw_model(models.options.headphones, vec2(0, -0.2), vec3(0, 0, -300), -2.0f * system_cycle_time()); break;
 		case 3: draw_model(models.options.stopwatch, vec2(0, -0.2), vec3(0, 0, -400), -2.0f * system_cycle_time()); break;
@@ -860,6 +865,7 @@ void main_menu_init(void) {
 	objects_unpack(models.rescue, objects_load("wipeout/common/rescu.prm", image_get_compressed_textures("wipeout/common/rescu.cmp")));
 
 	render_state.LOAD_UNFILTERED = 1;
+#if defined(_arch_dreamcast)
 	// ugly hack but hey it gets it loaded up
 	uint32_t dcpad_size;
 	void *objdata = platform_load_asset("wipeout/common/dcpad.bin", &dcpad_size);
@@ -868,6 +874,7 @@ void main_menu_init(void) {
 	model_faces = (render_vertex_t *)(((uintptr_t)mfptr + 31) & ~31);
 	memcpy(model_faces, objdata, DCPAD_NUM_FACES * sizeof(render_vertex_t) * 4);
 	mem_temp_free(objdata);
+#endif
 
 	objects_unpack(models.misc, objects_load("wipeout/common/msdos.prm", image_get_compressed_textures("wipeout/common/msdos.cmp")));
 	render_state.LOAD_UNFILTERED = 0;
