@@ -22,7 +22,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 2 | Boots headless ✅ | Logs show assets loading from `host:` and the frame counter rising, with no crash |
 | 3 | 2D on screen ✅ | Title screen and menus visible (untextured) |
 | 4 | Pad input ✅ | Can navigate menus and start a race |
-| 5 | 3D untextured | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
+| 5 | 3D untextured ✅ | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
 | 6 | Textures and blending | The game looks right |
 | 7 | Sound | Sound effects and music in menus and races |
 | 8 | Saves | Settings and best times survive a power cycle on a memory card |
@@ -73,6 +73,13 @@ presses from the title start a race on track02, which runs with the HUD in flat 
 Not yet checked with a real pad on a real console.
 
 ### 5. 3D untextured
+Done in PCSX2: track, scenery, ships and menu models draw as Gouraud-shaded
+polygons with depth testing, near-plane and guard-band clipping, back-face culling,
+sprites and screen shake; 16:9 anamorphic works. Races run at about 30fps.
+Left for later: boost/item pads, which the Dreamcast draws twice with special
+blending (stage 6), and performance (stage 10). The renderer builds its own GIF
+packets, so drawing is already batched per 64 KB; the per-matrix batching for VU1
+is part of stage 10.
 - Anamorphic 16:9 (moved from stage 3): same framebuffer, 16:9 projection, HUD/2D
   aspect correction. Replace the Dreamcast-only letterbox mode and fix the
   out-of-bounds bug in `render_res_to_size()`.

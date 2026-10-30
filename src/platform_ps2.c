@@ -6,6 +6,7 @@
 #include <timer.h>
 
 #include "platform.h"
+#include "render.h"
 #include "system.h"
 #include "utils.h"
 #include "mem.h"
@@ -47,8 +48,9 @@ void platform_exit(void) {
 	wants_to_exit = 1;
 }
 
+// The game's layout size, which depends on the 4:3 / 16:9 setting.
 vec2i_t platform_screen_size(void) {
-	return vec2i(640, 480);
+	return render_size();
 }
 
 // Seconds since the first call, from the EE's bus-clock timer.

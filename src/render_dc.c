@@ -158,6 +158,7 @@ render_vertex_t vs[5];
 
 // render_vertex_t is passed straight to the PVR, so it must match pvr_vertex_t
 _Static_assert(sizeof(render_vertex_t) == sizeof(pvr_vertex_t), "render_vertex_t size");
+_Static_assert(_Alignof(render_vertex_t) == _Alignof(pvr_vertex_t), "render_vertex_t alignment");
 _Static_assert(offsetof(render_vertex_t, argb) == offsetof(pvr_vertex_t, argb), "render_vertex_t layout");
 _Static_assert(RENDER_VERT == PVR_CMD_VERTEX && RENDER_VERT_EOL == PVR_CMD_VERTEX_EOL, "render_vertex_t flags");
 void __attribute__((aligned(32))) *ptrs[TEXTURES_MAX] = {0};

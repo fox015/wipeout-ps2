@@ -34,12 +34,14 @@ typedef union {
 
 // Vertex as written by game code, before transform. 32 bytes: flags, x, y, z,
 // u, v, argb, oargb. Track faces and dcpad.bin are stored in this layout.
+// 32-byte aligned like KOS's pvr_vertex_t: structs that contain it (e.g.
+// track_face_t, 256 bytes) and memcpy32() rely on that.
 typedef struct {
 	uint32_t flags;
 	float x, y, z;
 	float u, v;
 	uint32_t argb, oargb;
-} render_vertex_t;
+} __attribute__((aligned(32))) render_vertex_t;
 
 // flags: RENDER_VERT_EOL marks the last vertex of a polygon
 #define RENDER_VERT     0xe0000000

@@ -13,17 +13,23 @@
 
 SNAP_DIR="$HOME/Library/Application Support/PCSX2/snaps"
 
+# Bring PCSX2 to the front with its game window focused: keys sent while its
+# Log Window has focus never reach the pad.
+FOCUS_GAME=(-e 'tell application "PCSX2" to activate'
+            -e 'tell application "System Events" to tell process "PCSX2" to perform action "AXRaise" of (first window whose name does not start with "Log Window")'
+            -e 'delay 0.2')
+
 case "${1:-}" in
     hold)
         [ -n "${2:-}" ] || { echo "Usage: $0 hold <key> [seconds]"; exit 1; }
-        osascript -e 'tell application "PCSX2" to activate' -e 'delay 0.2' \
+        osascript "${FOCUS_GAME[@]}" \
                   -e "tell application \"System Events\" to key down \"$2\"" \
                   -e "delay ${3:-0.25}" \
                   -e "tell application \"System Events\" to key up \"$2\""
         ;;
     shot)
         before=$(ls -1 "$SNAP_DIR" 2>/dev/null | wc -l)
-        osascript -e 'tell application "PCSX2" to activate' -e 'delay 0.8' \
+        osascript "${FOCUS_GAME[@]}" -e 'delay 0.6' \
                   -e 'tell application "System Events" to key code 100' > /dev/null
         for _ in 1 2 3 4 5 6 7 8 9 10; do
             sleep 1

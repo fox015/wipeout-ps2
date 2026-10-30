@@ -491,8 +491,10 @@ void track_load_sections(char *file_name) {
 		vec3_t v0,v1,v2,v3;
 		for (int j=0;j<ts->face_count;j++) {
 			track_face_t *tfc = &g.track.faces[ts->face_start + j];
+			// Base faces come in left/right pairs; the last one found,
+			// minus one, is the first of the pair.
 			if (flags_any(tfc->flags, FACE_TRACK_BASE)) {
-				ts->base_face = (track_face_t *)((uintptr_t)tfc - 0x100);
+				ts->base_face = tfc - 1;
 			}
 
 // two different ways to compute a radius
