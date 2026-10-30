@@ -9,10 +9,11 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Stages 0–4 are done. In PCSX2 at 60fps, the pad drives the game from the title
-  screen through the menus into a race. 2D (menus, HUD) draws as flat rectangles:
-  textures are stand-in colours per texture index until stage 6. 3D, sound and
-  saves are stubs. Next up: stage 5.
+- Stages 0–5 are done. In PCSX2 the pad drives the game from the title screen
+  through the menus into a race, with 3D drawn as Gouraud-shaded polygons and 2D
+  as flat rectangles. Textures are stand-in colours per texture index until
+  stage 6. Menus run at 60fps, races at about 30fps (performance is stage 10).
+  Sound and saves are stubs. Next up: stage 6.
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -63,9 +64,18 @@ Read it before starting work on a stage.
   `last_five_tracks`, `wav_volume`, `view_mat`/`mvp_mat`/`vp_mat`.
 - Builds: `make` is the PS2 build. `make -f Makefile.dc` is the Dreamcast build
   (KOS v2.2.1); stage 1 kept it compiling at every commit.
-- Known bug: `render_res_to_size()` in `render_dc.c` has 2 entries but the
-  `render_resolution_t` enum has 3, so `RENDER_RES_169L` reads out of bounds.
-  Nothing uses it yet (`game.c` hard-codes `RENDER_RES_43`).
+- Known bug (Dreamcast only): `render_res_to_size()` in `render_dc.c` has 2 entries
+  but the `render_resolution_t` enum has 3, so `RENDER_RES_169L` reads out of bounds.
+  The PS2 version maps both 16:9 values to 640x360.
+- PS2 renderer (`render_ps2.c`): gsKit only sets up the display, clears (at the
+  start of each frame) and flips. Everything else goes through `gs_ps2.c`, our
+  GIF packet builder (A+D register writes, DMA'd when 64 KB fills or at frame
+  end), because gsKit's primitives can't control depth writes (ZBUF.ZMSK).
+  3D follows `render_dc.c`'s maths, with a general polygon clipper (near plane +
+  GS guard band) in place of its hand-written quad cases. Depth is 1/w in a
+  16-bit Z-buffer, GEQUAL.
+- 16:9 is anamorphic as on the Dreamcast: layout 640x360, 16:9 projection, output
+  fills all lines. Menu/HUD code checks `platform_screen_size().y == 360`.
 - Known bug: `sfx_load()` in `sfx_dc.c` clears `nodes->data` in a loop without
   indexing, so only node 0 is reset. Harmless on the Dreamcast; don't copy it.
 
