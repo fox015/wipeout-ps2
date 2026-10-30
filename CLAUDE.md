@@ -9,9 +9,10 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Stages 0–3 are done. `wipeout.elf` boots to the title screen in PCSX2 at 60fps,
-  drawing 2D as flat rectangles: textures are stand-in colours per texture index
-  until stage 6. 3D, input, sound and saves are stubs. Next up: stage 4.
+- Stages 0–4 are done. In PCSX2 at 60fps, the pad drives the game from the title
+  screen through the menus into a race. 2D (menus, HUD) draws as flat rectangles:
+  textures are stand-in colours per texture index until stage 6. 3D, sound and
+  saves are stubs. Next up: stage 5.
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -20,9 +21,8 @@ Read it before starting work on a stage.
   (`wipeout/common`, `wipeout/textures`, `wipeout/track01`…, music as QOA).
   PCSX2's `host:` root is the folder the `.elf` is in, so the game reads it as
   `host:wipeout/...`. Never download or extract game data yourself.
-- Expect at the main menu (stage 4): it loads `wipeout/common/dcpad.bin`, the
-  Dreamcast controller model, which isn't in the data zip (the Dreamcast build copied
-  it in from the repo root). Copy it in or skip the model on PS2.
+- The controls page's 3D model of a Dreamcast pad (`dcpad.bin`) is Dreamcast-only
+  (`#if defined(_arch_dreamcast)` in `main_menu.c`); on PS2 that page shows no model.
 
 ## How changes land
 - One branch and one PR per roadmap stage. Inside a PR, each commit does one thing.
@@ -53,7 +53,11 @@ Read it before starting work on a stage.
   stubs that call `TODO()` (`todo_ps2.h`), which logs `TODO: <function>` once.
 - Dreamcast-only, not built for PS2: `vmu.c`/`vmudata.h` (→ libmc, stage 8),
   `sndwav.c` (→ audsrv, stage 7), `asmfuncs.S`, `dcpad.bin`, `sonic.raw`.
-  `input.c` is shared; the Dreamcast pad reading lives in `platform_dc.c` (→ libpad, stage 4).
+  `input.c` is shared; the Dreamcast pad reading lives in `platform_dc.c`.
+- PS2 pad: `pad_ps2.c` (libpad with the BIOS's `rom0:SIO2MAN`/`rom0:PADMAN`, port 1,
+  analog mode). Buttons map to the Dreamcast layout by position: Cross = A (thrust,
+  select), Circle = B, Square = X (fire), Triangle = Y (view), L2/R2 = triggers
+  (airbrakes), L1/R1 = shoulders (unbound by default).
 - Globals the game reaches with `extern` instead of a header, which each platform must
   define: `if_to_await`, `HUD_NO_TEXTURE`, `SetShake`, `ShakeScreen`,
   `last_five_tracks`, `wav_volume`, `view_mat`/`mvp_mat`/`vp_mat`.
@@ -116,6 +120,10 @@ Read it before starting work on a stage.
 - Screenshots: the user granted the Claude app Accessibility permission, so
   `build_and_run.sh --shot` (F8 to PCSX2) works; read the PNG from
   `~/Library/Application Support/PCSX2/snaps/`. Screen Recording isn't granted.
+- Drive PCSX2: `tools/pcsx2_input.sh hold k` presses Cross (keys follow PCSX2's
+  Pad1 keyboard bindings, listed in the script), `tools/pcsx2_input.sh shot` takes a
+  screenshot and prints its path. From the title, 5 Cross presses start a race
+  (track02).
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
