@@ -533,8 +533,8 @@ void render_push_2d_tile(vec2i_t pos, vec2i_t uv_offset, vec2i_t uv_size, vec2i_
 	// From the game's layout height to the 480 lines xyz_from() expects.
 	float sy = 480.0f / screen_size.y;
 	gs_vertex_t corners[2] = {
-		{rgbaq, xyz_from(pos.x, pos.y * sy, 0)},
-		{rgbaq, xyz_from(pos.x + size.x, (pos.y + size.y) * sy, 0)},
+		{.rgbaq = rgbaq, .xyz = xyz_from(pos.x, pos.y * sy, 0)},
+		{.rgbaq = rgbaq, .xyz = xyz_from(pos.x + size.x, (pos.y + size.y) * sy, 0)},
 	};
 	gs_draw(GS_SET_PRIM(GS_PRIM_SPRITE, 0, 0, 0, 1, 0, 0, 0, 0), corners, 2);
 
