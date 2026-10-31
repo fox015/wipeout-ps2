@@ -34,7 +34,10 @@ int xform_all_verts(vec4_t *output, vec4_t *input, int count) {
 		output[i].w = m[3] * x + m[7] * y + m[11] * z + m[15];
 		wtest &= output[i].z > -output[i].w;
 	}
-	prof.render += prof_cycles() - t0;
+	uint32_t dt = prof_cycles() - t0;
+	prof.render += dt;
+	prof.xform += dt;
+	prof.verts += count;
 	return wtest;
 }
 

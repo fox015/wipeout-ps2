@@ -21,6 +21,8 @@ typedef struct {
 	uint32_t triangles; // drawn (after clipping)
 	uint32_t render;    // cycles in the renderer: transform, clip, packets
 	uint32_t polys;     // polygons the game submitted
+	uint32_t xform;     // cycles of render spent transforming vertices
+	uint32_t verts;     // vertices transformed
 } prof_counters_t;
 
 extern prof_counters_t prof;

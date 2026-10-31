@@ -531,7 +531,10 @@ static void transform_vs(int n, float *w) {
 		vs[i].z = m[2] * x + m[6] * y + m[10] * z + m[14];
 		w[i]    = m[3] * x + m[7] * y + m[11] * z + m[15];
 	}
-	prof.render += prof_cycles() - t0;
+	uint32_t dt = prof_cycles() - t0;
+	prof.render += dt;
+	prof.xform += dt;
+	prof.verts += n;
 }
 
 void render_quad(uint16_t texture_index) {

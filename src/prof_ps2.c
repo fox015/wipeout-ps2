@@ -10,7 +10,7 @@ static uint32_t t_start, t_work, t_flushed;
 static struct {
 	uint32_t frames;
 	uint64_t work, flush, vsync, dma_wait;
-	uint64_t qwords, triangles, render, polys;
+	uint64_t qwords, triangles, render, polys, xform, verts;
 	uint64_t total;
 } sum;
 
@@ -42,15 +42,17 @@ void prof_frame_end(void) {
 	sum.triangles += prof.triangles;
 	sum.render += prof.render;
 	sum.polys += prof.polys;
+	sum.xform += prof.xform;
+	sum.verts += prof.verts;
 	sum.total += t_end - t_start;
 
 	if (sum.total >= PROF_HZ) {
 		uint32_t n = sum.frames;
 		// work includes the DMA waits of flushes made mid-frame.
-		printf("prof: %u frames, ms/frame: work %.2f (render %.2f, dma wait %.2f), final flush %.2f, vsync %.2f; %u polys, %u tris, %u KB to GS\n",
-			(unsigned)n, (double)ms(sum.work, n), (double)ms(sum.render, n), (double)ms(sum.dma_wait, n),
+		printf("prof: %u frames, ms/frame: work %.2f (render %.2f of which xform %.2f, dma wait %.2f), final flush %.2f, vsync %.2f; %u verts, %u polys, %u tris, %u KB to GS\n",
+			(unsigned)n, (double)ms(sum.work, n), (double)ms(sum.render, n), (double)ms(sum.xform, n), (double)ms(sum.dma_wait, n),
 			(double)ms(sum.flush, n), (double)ms(sum.vsync, n),
-			(unsigned)(sum.polys / n), (unsigned)(sum.triangles / n), (unsigned)(sum.qwords * 16 / n / 1024));
+			(unsigned)(sum.verts / n), (unsigned)(sum.polys / n), (unsigned)(sum.triangles / n), (unsigned)(sum.qwords * 16 / n / 1024));
 		sum = (typeof(sum)){0};
 	}
 }
