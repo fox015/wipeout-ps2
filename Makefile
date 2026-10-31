@@ -28,7 +28,7 @@ EE_CFLAGS += -DVIDEO_$(VIDEO)
 
 # The renderer's per-polygon maths. The EE's FPU isn't IEEE anyway (no NaN or
 # infinity, denormals flush to zero), so -ffast-math gives up little.
-src/render_ps2.o src/mtx_ps2.o: EE_CFLAGS += -O3 -ffast-math
+src/render_ps2.o src/mtx_ps2.o src/gs_ps2.o: EE_CFLAGS += -O3 -ffast-math
 
 EE_INCS += -Isrc -I$(GSKIT)/include
 EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -lmc -laudsrv -lps2snd -lpatches -ldebug -lm
