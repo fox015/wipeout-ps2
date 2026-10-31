@@ -90,16 +90,7 @@ uint8_t *platform_load_asset(const char *name, uint32_t *bytes_read) {
 	return bytes;
 }
 
-uint8_t *platform_load_userdata(const char *name, uint32_t *bytes_read) {
-	TODO();
-	*bytes_read = 0;
-	return NULL;
-}
-
-uint32_t platform_store_userdata(const char *name, void *bytes, int32_t len) {
-	TODO();
-	return 0;
-}
+// platform_load_userdata() and platform_store_userdata() are in memcard_ps2.c.
 
 int main(int argc, char *argv[]) {
 	log_to_sio();
