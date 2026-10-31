@@ -103,6 +103,9 @@ default build, for square pixels in screenshots.
 
 ### 7. Sound
 - audsrv for sound effects and music. Go to SPU2 level only if audsrv isn't enough.
+- Reverb in tunnels, as on the PS1 (missing in wipeout-rewrite): the SPU2 has
+  hardware reverb. See `docs/FEATURES.md`.
+- Extra, if time allows: the intro video. The IPU decodes MPEG in hardware.
 - Read: ps2sdk IOP module source, ps2tek, PCSX2's SPU2 code.
 
 ### 8. Saves
