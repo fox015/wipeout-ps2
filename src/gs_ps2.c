@@ -4,6 +4,7 @@
 #include <gs_gp.h>
 
 #include "gs_ps2.h"
+#include "prof_ps2.h"
 
 // 64 KB of qwords. Each qword is one A+D register write (value, register).
 #define PACKET_QWORDS 4096
@@ -25,9 +26,12 @@ void gs_flush(void) {
 	packet[1] = GIF_REG_AD;
 
 	FlushCache(0);
+	uint32_t t0 = prof_cycles();
 	dma_channel_wait(DMA_CHANNEL_GIF, 0); // gsKit may still be sending its queue
 	dma_channel_send_normal(DMA_CHANNEL_GIF, packet, packet_len, 0, 0);
 	dma_channel_wait(DMA_CHANNEL_GIF, 0);
+	prof.dma_wait += prof_cycles() - t0;
+	prof.qwords += packet_len;
 	packet_len = 1;
 }
 

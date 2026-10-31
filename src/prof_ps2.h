@@ -1,0 +1,34 @@
+#ifndef PROF_PS2_H
+#define PROF_PS2_H
+
+#include <stdint.h>
+
+// Frame profiling on the EE's cycle counter (COP0 Count, 294.912 MHz).
+// render_ps2.c marks the frame's phases; gs_ps2.c adds its DMA waits.
+// prof_frame_end() logs per-frame averages once a second.
+
+#define PROF_HZ 294912000.0f
+
+static inline uint32_t prof_cycles(void) {
+	uint32_t c;
+	__asm__ volatile("mfc0 %0, $9" : "=r"(c));
+	return c;
+}
+
+typedef struct {
+	uint32_t dma_wait;  // cycles waiting for GIF DMA inside the frame
+	uint32_t qwords;    // sent to the GS
+	uint32_t triangles; // drawn (after clipping)
+	uint32_t render;    // cycles in the renderer: transform, clip, packets
+	uint32_t polys;     // polygons the game submitted
+} prof_counters_t;
+
+extern prof_counters_t prof;
+
+void prof_frame_start(void);
+// Call just before the end-of-frame flush, after it, and after vsync.
+void prof_frame_work_done(void);
+void prof_frame_flushed(void);
+void prof_frame_end(void);
+
+#endif

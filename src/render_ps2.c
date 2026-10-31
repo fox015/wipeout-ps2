@@ -17,6 +17,7 @@
 
 #include "render.h"
 #include "render_ps2.h"
+#include "prof_ps2.h"
 #include "mtx.h"
 #include "system.h"
 #include "utils.h"
@@ -216,6 +217,7 @@ static void sync_blend_state(void) {
 // Frames
 
 void render_frame_prepare(void) {
+	prof_frame_start();
 	// gsKit clears colour and Z right away, before any of our packets.
 	gsKit_clear(gs, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00));
 	gsKit_queue_exec(gs);
@@ -234,9 +236,12 @@ void render_frame_end(void) {
 	depth_write = 1;
 	depth_test = 0;
 	sync_depth_state();
+	prof_frame_work_done();
 	gs_flush();
+	prof_frame_flushed();
 	textures_frame_end();
 	gsKit_sync_flip(gs);
+	prof_frame_end();
 }
 
 // The GS draws in submission order, so there is no separate translucent pass.
@@ -480,11 +485,14 @@ static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
 		gs_vertex_t tri[3] = {gv[0], gv[i], gv[i + 1]};
 		gs_draw(prim, tri, 3);
 	}
+	prof.triangles += n - 2;
 }
 
 // vs[] in the order of a triangle strip (0,1,2 and 1,2,3) to a polygon, in
 // clip space, with each position already transformed and its w given.
 static void draw_vs(const int *order, int n, const float *w, uint16_t texture_index) {
+	uint32_t t0 = prof_cycles();
+	prof.polys++;
 	clip_vertex_t poly[4];
 	for (int i = 0; i < n; i++) {
 		const render_vertex_t *v = &vs[order[i]];
@@ -497,6 +505,7 @@ static void draw_vs(const int *order, int n, const float *w, uint16_t texture_in
 		poly[i].color = rgba_from_argb(v->argb);
 	}
 	draw_clip_poly(poly, n, texture_index);
+	prof.render += prof_cycles() - t0;
 }
 
 static const int quad_order[4] = {0, 1, 3, 2};
@@ -504,6 +513,7 @@ static const int tri_order[3] = {0, 1, 2};
 
 // Transform vs[0..n) by the current matrix into clip space, keeping w.
 static void transform_vs(int n, float *w) {
+	uint32_t t0 = prof_cycles();
 	const float *m = mtx_current.m;
 	for (int i = 0; i < n; i++) {
 		float x = vs[i].x, y = vs[i].y, z = vs[i].z;
@@ -512,6 +522,7 @@ static void transform_vs(int n, float *w) {
 		vs[i].z = m[2] * x + m[6] * y + m[10] * z + m[14];
 		w[i]    = m[3] * x + m[7] * y + m[11] * z + m[15];
 	}
+	prof.render += prof_cycles() - t0;
 }
 
 void render_quad(uint16_t texture_index) {

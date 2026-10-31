@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "mtx.h"
+#include "prof_ps2.h"
 
 mat4_t mtx_current;
 
@@ -22,6 +23,7 @@ void mtx_load_mul(const mat4_t *a, const mat4_t *b) {
 // Matches asmfuncs.S: output = current * (x, y, z, 1) with w kept, and the
 // result is 1 only if every vertex has z > -w (in front of the near plane).
 int xform_all_verts(vec4_t *output, vec4_t *input, int count) {
+	uint32_t t0 = prof_cycles();
 	const float *m = mtx_current.m;
 	int wtest = 1;
 	for (int i = 0; i < count; i++) {
@@ -32,6 +34,7 @@ int xform_all_verts(vec4_t *output, vec4_t *input, int count) {
 		output[i].w = m[3] * x + m[7] * y + m[11] * z + m[15];
 		wtest &= output[i].z > -output[i].w;
 	}
+	prof.render += prof_cycles() - t0;
 	return wtest;
 }
 
