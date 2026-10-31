@@ -624,17 +624,24 @@ void render_push_2d_tile(vec2i_t pos, vec2i_t uv_offset, vec2i_t uv_size, vec2i_
 // Textures
 //
 // Every texture is kept in RAM, padded to powers of two as on the Dreamcast
-// (game code divides UVs by render_texture_padsize()), in the GS's 16-bit
-// colour order. The VRAM after gsKit's frame and Z buffers is a cache: a
-// texture is uploaded the first time it's drawn, and when the cache is full
-// it's emptied and filled again from RAM.
+// (game code divides UVs by render_texture_padsize()). The game hands over
+// 16-bit colours, but the PS1 textures were paletted, so most have 16 or 256
+// colours at most: those are stored as 4-bit or 8-bit indices (PSMT4/PSMT8)
+// plus a 16-bit palette (CLUT), at 1/4 or 1/2 the VRAM. The rest stay 16-bit,
+// converted to the GS's colour order.
+//
+// The VRAM after gsKit's frame and Z buffers is a cache: a texture is
+// uploaded the first time it's drawn, and when the cache is full it's
+// emptied and filled again from RAM.
 
 typedef struct {
 	vec2i_t size;     // as the game made it
 	vec2i_t padsize;  // powers of two, as uploaded
-	uint16_t *pixels; // padsize, PSMCT16; NULL for RENDER_NO_TEXTURE
+	void *pixels;     // padsize; NULL for RENDER_NO_TEXTURE
+	uint16_t *clut;   // PSMT4/PSMT8: 16 or 256 colours in CSM1 order, else NULL
 	int32_t vram;     // block address (256-byte units), or -1 if not in VRAM
-	uint16_t blocks;  // VRAM blocks the texture covers
+	uint16_t blocks;  // VRAM blocks the texture covers; its CLUT follows
+	uint8_t psm;      // GS_PSM_T4, GS_PSM_T8 or GS_PSM_CT16
 	uint8_t unfiltered;
 } texture_t;
 
@@ -648,12 +655,19 @@ static uint32_t vram_next;
 static int32_t sent_texture = -1;
 static u64 sent_tex1 = ~0ull;
 
-// Upload counts, logged once a second.
+// Upload counts, logged once a second, and what the textures were stored as.
 static uint32_t stat_frames, stat_uploads, stat_bytes, stat_resets;
+static uint32_t stat_logged_len;
 
-// Block numbers within a 64x64-pixel PSMCT16 page, by block row and column
-// (blocks are 16x8 pixels).
-static const uint8_t block_ct16[8][4] = {
+// How each pixel format lays out blocks (256 bytes each) within a page
+// (8 KB). Block numbers by block row and column.
+static const uint8_t blocks_ct32[4][8] = { // also PSMT8
+	{ 0,  1,  4,  5, 16, 17, 20, 21},
+	{ 2,  3,  6,  7, 18, 19, 22, 23},
+	{ 8,  9, 12, 13, 24, 25, 28, 29},
+	{10, 11, 14, 15, 26, 27, 30, 31},
+};
+static const uint8_t blocks_ct16[8][4] = { // also PSMT4
 	{ 0,  2,  8, 10},
 	{ 1,  3,  9, 11},
 	{ 4,  6, 12, 14},
@@ -664,26 +678,64 @@ static const uint8_t block_ct16[8][4] = {
 	{21, 23, 29, 31},
 };
 
-// Buffer width in 64-pixel units.
-static int texture_tbw(int width) {
-	return width < 64 ? 1 : width / 64;
+typedef struct {
+	int page_w, page_h;   // pixels
+	int block_w, block_h; // pixels
+	int cols;             // blocks per page row
+	const uint8_t *table;
+} psm_layout_t;
+
+static psm_layout_t psm_layout(int psm) {
+	switch (psm) {
+	case GS_PSM_T4: return (psm_layout_t){128, 128, 32, 16, 4, &blocks_ct16[0][0]};
+	case GS_PSM_T8: return (psm_layout_t){128,  64, 16, 16, 8, &blocks_ct32[0][0]};
+	default:        return (psm_layout_t){ 64,  64, 16,  8, 4, &blocks_ct16[0][0]};
+	}
 }
 
-// The highest block a w x h PSMCT16 texture touches, plus one. A texture
-// narrower or shorter than a page doesn't use a contiguous run of blocks.
-static uint16_t texture_blocks(int w, int h) {
-	int tbw = texture_tbw(w);
+// Buffer width in 64-pixel units. Paletted formats have 128-pixel pages, so
+// theirs is even.
+static int texture_tbw(int psm, int width) {
+	int min = (psm == GS_PSM_CT16) ? 1 : 2;
+	return width / 64 < min ? min : width / 64;
+}
+
+// The highest block a w x h texture touches, plus one. A texture narrower or
+// shorter than a page doesn't use a contiguous run of blocks.
+static uint16_t texture_blocks(int psm, int w, int h) {
+	psm_layout_t l = psm_layout(psm);
+	int pages_per_row = texture_tbw(psm, w) * 64 / l.page_w;
 	int max = 0;
-	for (int y = 0; y < h; y += 8) {
-		for (int x = 0; x < w; x += 16) {
-			int page = (y / 64) * tbw + x / 64;
-			int block = page * 32 + block_ct16[(y % 64) / 8][(x % 64) / 16];
+	for (int y = 0; y < h; y += l.block_h) {
+		for (int x = 0; x < w; x += l.block_w) {
+			int page = (y / l.page_h) * pages_per_row + x / l.page_w;
+			int row = (y % l.page_h) / l.block_h;
+			int col = (x % l.page_w) / l.block_w;
+			int block = page * 32 + l.table[row * l.cols + col];
 			if (block > max) {
 				max = block;
 			}
 		}
 	}
 	return max + 1;
+}
+
+static uint32_t texture_bytes(const texture_t *t) {
+	uint32_t texels = t->padsize.x * t->padsize.y;
+	switch (t->psm) {
+	case GS_PSM_T4: return texels / 2;
+	case GS_PSM_T8: return texels;
+	default:        return texels * 2;
+	}
+}
+
+// The CLUT is 8x2 colours for PSMT4 (one block) and 16x16 for PSMT8 (two).
+static int clut_entries(int psm) {
+	return psm == GS_PSM_T4 ? 16 : 256;
+}
+
+static int clut_blocks(int psm) {
+	return psm == GS_PSM_T4 ? 1 : 2;
 }
 
 static void textures_vram_init(void) {
@@ -702,15 +754,23 @@ static void textures_vram_clear(void) {
 }
 
 static void texture_upload(texture_t *t) {
-	if (vram_next + t->blocks > VRAM_BLOCKS) {
+	uint32_t blocks = t->blocks + (t->clut ? clut_blocks(t->psm) : 0);
+	if (vram_next + blocks > VRAM_BLOCKS) {
 		textures_vram_clear();
 		stat_resets++;
 	}
 	t->vram = vram_next;
-	vram_next += t->blocks;
+	vram_next += blocks;
 
-	uint32_t bytes = t->padsize.x * t->padsize.y * 2;
-	gs_upload(t->vram, texture_tbw(t->padsize.x), GS_PSM_CT16, t->padsize.x, t->padsize.y, t->pixels, bytes);
+	uint32_t bytes = texture_bytes(t);
+	gs_upload(t->vram, texture_tbw(t->psm, t->padsize.x), t->psm,
+		t->padsize.x, t->padsize.y, t->pixels, bytes);
+	if (t->clut) {
+		int n = clut_entries(t->psm);
+		int w = n == 16 ? 8 : 16;
+		gs_upload(t->vram + t->blocks, 1, GS_PSM_CT16, w, n / w, t->clut, n * 2);
+		bytes += n * 2;
+	}
 	gs_set_reg(GS_REG_TEXFLUSH, 0);
 	sent_texture = -1;
 
@@ -728,9 +788,12 @@ static void texture_bind(uint16_t texture_index) {
 		texture_upload(t);
 	}
 	if (texture_index != sent_texture) {
-		// RGBA (alpha from the texture), modulated by the vertex colour
-		gs_set_reg(GS_REG_TEX0, GS_SET_TEX0(t->vram, texture_tbw(t->padsize.x), GS_PSM_CT16,
-			__builtin_ctz(t->padsize.x), __builtin_ctz(t->padsize.y), 1, 0, 0, 0, 0, 0, 0));
+		// RGBA (alpha from the texture), modulated by the vertex colour. A
+		// paletted texture loads its CLUT (CSM1, 16-bit) with it.
+		int paletted = t->clut != NULL;
+		gs_set_reg(GS_REG_TEX0, GS_SET_TEX0(t->vram, texture_tbw(t->psm, t->padsize.x), t->psm,
+			__builtin_ctz(t->padsize.x), __builtin_ctz(t->padsize.y), 1, 0,
+			paletted ? t->vram + t->blocks : 0, GS_PSM_CT16, 0, 0, paletted));
 		sent_texture = texture_index;
 	}
 	int filter = save.filter && !t->unfiltered; // 1 = bilinear
@@ -742,7 +805,7 @@ static void texture_bind(uint16_t texture_index) {
 }
 
 static void textures_frame_start(void) {
-	// A 16-bit texel's alpha bit becomes alpha 0 or 0x80.
+	// A 16-bit colour's alpha bit becomes alpha 0 or 0x80.
 	gs_set_reg(GS_REG_TEXA, GS_SET_TEXA(0x00, 0, 0x80));
 	gs_set_reg(GS_REG_CLAMP, GS_SET_CLAMP(0, 0, 0, 0, 0, 0)); // repeat
 	sent_texture = -1;
@@ -752,6 +815,22 @@ static void textures_frame_start(void) {
 static void textures_frame_end(void) {
 	if (++stat_frames < 60) {
 		return;
+	}
+	if (textures_len != stat_logged_len) {
+		uint32_t t4 = 0, t8 = 0, ct16 = 0, ram = 0;
+		for (int i = 0; i < textures_len; i++) {
+			texture_t *t = &textures[i];
+			if (t->pixels == NULL) {
+				continue;
+			}
+			t4 += t->psm == GS_PSM_T4;
+			t8 += t->psm == GS_PSM_T8;
+			ct16 += t->psm == GS_PSM_CT16;
+			ram += texture_bytes(t) + (t->clut ? clut_entries(t->psm) * 2 : 0);
+		}
+		printf("textures: %u 4-bit, %u 8-bit, %u 16-bit, %u KB in RAM\n",
+			(unsigned)t4, (unsigned)t8, (unsigned)ct16, (unsigned)ram / 1024);
+		stat_logged_len = textures_len;
 	}
 	if (stat_uploads) {
 		printf("textures: %u uploads (%u KB), %u cache resets in %u frames\n",
@@ -780,6 +859,67 @@ static uint16_t gs_color16(uint16_t c) {
 	return (c & 0x83e0) | ((c >> 10) & 0x1f) | ((c & 0x1f) << 10);
 }
 
+// Index + 1 of each colour seen in the texture being converted, 0 if unseen.
+static uint8_t color_index[65536];
+
+// Store t->pixels (pw x ph GS colours, in a buffer it takes over) as 4-bit
+// or 8-bit indices if it has few enough colours.
+static void texture_palettize(texture_t *t, uint16_t *colors) {
+	uint32_t n = t->padsize.x * t->padsize.y;
+	uint16_t palette[256];
+	int len = 0;
+	for (uint32_t i = 0; i < n; i++) {
+		uint16_t c = colors[i];
+		if (color_index[c]) {
+			continue;
+		}
+		if (len == 256) {
+			len++; // too many
+			break;
+		}
+		palette[len++] = c;
+		color_index[c] = len;
+	}
+
+	if (len > 256) {
+		t->psm = GS_PSM_CT16;
+		t->pixels = colors;
+	} else {
+		t->psm = len <= 16 ? GS_PSM_T4 : GS_PSM_T8;
+		int entries = clut_entries(t->psm);
+		t->clut = memalign(64, entries * 2);
+		for (int i = 0; i < entries; i++) {
+			// CSM1 stores a 256-colour CLUT with index bits 3 and 4 swapped.
+			int j = entries == 256 ? (i & ~0x18) | ((i & 0x08) << 1) | ((i & 0x10) >> 1) : i;
+			t->clut[i] = j < len ? palette[j] : 0;
+		}
+
+		uint8_t *idx = memalign(64, t->psm == GS_PSM_T4 ? n / 2 : n);
+		if (t->psm == GS_PSM_T4) {
+			// two texels a byte, the first in the low nibble
+			for (uint32_t i = 0; i < n; i += 2) {
+				idx[i / 2] = (color_index[colors[i]] - 1) | ((color_index[colors[i + 1]] - 1) << 4);
+			}
+		} else {
+			for (uint32_t i = 0; i < n; i++) {
+				idx[i] = color_index[colors[i]] - 1;
+			}
+		}
+		t->pixels = idx;
+		free(colors);
+	}
+
+	for (int i = 0; i < len && i < 256; i++) {
+		color_index[palette[i]] = 0;
+	}
+	if (len > 256) {
+		// the colour that overflowed was never added
+		for (uint32_t i = 0; i < n; i++) {
+			color_index[colors[i]] = 0;
+		}
+	}
+}
+
 uint16_t render_texture_create(uint32_t width, uint32_t height, uint16_t *pixels) {
 	if (textures_len >= TEXTURES_MAX) {
 		return RENDER_NO_TEXTURE;
@@ -790,6 +930,7 @@ uint16_t render_texture_create(uint32_t width, uint32_t height, uint16_t *pixels
 		.size = vec2i(width, height),
 		.padsize = vec2i(width, height),
 		.vram = -1,
+		.psm = GS_PSM_CT16,
 		.unfiltered = render_state.LOAD_UNFILTERED,
 	};
 	if (pixels == NULL) {
@@ -806,28 +947,28 @@ uint16_t render_texture_create(uint32_t width, uint32_t height, uint16_t *pixels
 
 	uint32_t pw = np2(width), ph = np2(height);
 	t->padsize = vec2i(pw, ph);
-	t->blocks = texture_blocks(pw, ph);
-	t->pixels = memalign(64, pw * ph * 2);
-	uint16_t *dst = t->pixels;
+	uint16_t *dst = memalign(64, pw * ph * 2);
 
 	if (empty) {
 		memset(dst, 0, pw * ph * 2);
-		return texture_index;
+	} else {
+		// Pad with repeated columns and rows, so wrapping and filtering at
+		// the edges see the texture itself.
+		for (uint32_t y = 0; y < height; y++) {
+			for (uint32_t x = 0; x < width; x++) {
+				dst[y * pw + x] = gs_color16(pixels[y * width + x]);
+			}
+			for (uint32_t x = width; x < pw; x++) {
+				dst[y * pw + x] = dst[y * pw + x - width];
+			}
+		}
+		for (uint32_t y = height; y < ph; y++) {
+			memcpy(&dst[y * pw], &dst[(y - height) * pw], pw * 2);
+		}
 	}
 
-	// Pad with repeated columns and rows, so wrapping and filtering at the
-	// edges see the texture itself.
-	for (uint32_t y = 0; y < height; y++) {
-		for (uint32_t x = 0; x < width; x++) {
-			dst[y * pw + x] = gs_color16(pixels[y * width + x]);
-		}
-		for (uint32_t x = width; x < pw; x++) {
-			dst[y * pw + x] = dst[y * pw + x - width];
-		}
-	}
-	for (uint32_t y = height; y < ph; y++) {
-		memcpy(&dst[y * pw], &dst[(y - height) * pw], pw * 2);
-	}
+	texture_palettize(t, dst);
+	t->blocks = texture_blocks(t->psm, pw, ph);
 	return texture_index;
 }
 
@@ -855,7 +996,9 @@ uint16_t render_textures_len(void) {
 void render_textures_reset(uint16_t len) {
 	for (int i = len; i < textures_len; i++) {
 		free(textures[i].pixels);
+		free(textures[i].clut);
 		textures[i].pixels = NULL;
+		textures[i].clut = NULL;
 	}
 	textures_len = len;
 	textures_vram_clear();
