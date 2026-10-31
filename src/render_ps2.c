@@ -373,7 +373,7 @@ void ShakeScreen(void) {
 typedef struct {
 	float x, y, z, w;
 	float u, v;
-	rgba_t color;
+	uint32_t argb; // the game's packed colour, converted when packed for the GS
 } clip_vertex_t;
 
 // Signed distance from a clip plane; >= 0 is inside.
@@ -408,7 +408,7 @@ static int clip_poly(const clip_vertex_t *in, int n, clip_vertex_t *out, plane_f
 			c->w = a->w + (b->w - a->w) * t;
 			c->u = a->u + (b->u - a->u) * t;
 			c->v = a->v + (b->v - a->v) * t;
-			c->color = a->color; // flat across the cut, as on the Dreamcast
+			c->argb = a->argb; // flat across the cut, as on the Dreamcast
 		}
 	}
 	return out_n;
@@ -434,36 +434,20 @@ static int needs_clip(const clip_vertex_t *v) {
 	return v->z < -v->w || v->x < -g || v->x > g || v->y < -g || v->y > g;
 }
 
-// Clip, project and draw a convex polygon given in clip space.
-static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
-	int all_out = ~0, any_out = 0;
-	for (int i = 0; i < n; i++) {
-		all_out &= outcode(&poly[i]);
-		any_out |= needs_clip(&poly[i]);
-	}
-	if (all_out) {
-		return;
-	}
-
-	// Most polygons are wholly inside every plane: only clip those that aren't.
-	clip_vertex_t buf_a[CLIP_MAX], buf_b[CLIP_MAX];
-	clip_vertex_t *src = poly, *dst = buf_a;
-	for (int p = 0; any_out && p < (int)(sizeof(clip_planes) / sizeof(clip_planes[0])); p++) {
-		n = clip_poly(src, n, dst, clip_planes[p]);
-		if (n < 3) {
-			return;
-		}
-		src = dst;
-		dst = (dst == buf_a) ? buf_b : buf_a;
-	}
-
+// Project a convex polygon, cull it if it faces away, and send it to the GS
+// as one triangle fan. Its vertices are clip-space positions and w, with
+// their UVs and colours, n of each, given by stride so draw_vs() can pass vs[]
+// as it is.
+static void draw_projected(int n, const float *pos, int pos_stride, const float *w, int w_stride,
+		const float *uv, int uv_stride, const uint32_t *argb, int argb_stride, uint16_t texture_index) {
 	// Project first: the back-face test needs only screen x and y, so culled
 	// polygons skip building GS vertices.
 	float sx[CLIP_MAX], sy[CLIP_MAX], rw[CLIP_MAX];
 	for (int i = 0; i < n; i++) {
-		rw[i] = 1.0f / src[i].w;
-		sx[i] = shake_x + 320.0f * src[i].x * rw[i];
-		sy[i] = shake_y - 240.0f * src[i].y * rw[i];
+		const float *p = pos + i * pos_stride;
+		rw[i] = 1.0f / w[i * w_stride];
+		sx[i] = shake_x + 320.0f * p[0] * rw[i];
+		sy[i] = shake_y - 240.0f * p[1] * rw[i];
 	}
 
 	if (cull_backface) {
@@ -480,10 +464,11 @@ static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
 	int textured = is_textured(texture_index);
 	gs_vertex_t gv[CLIP_MAX];
 	for (int i = 0; i < n; i++) {
+		const float *t = uv + i * uv_stride;
 		float z = rw[i] * Z_SCALE;
 		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
-		gv[i].rgbaq = rgbaq_from(src[i].color, textured, rw[i]);
-		gv[i].uv = GS_SET_ST(float_bits(src[i].u * rw[i]), float_bits(src[i].v * rw[i]));
+		gv[i].rgbaq = rgbaq_from(rgba_from_argb(argb[i * argb_stride]), textured, rw[i]);
+		gv[i].uv = GS_SET_ST(float_bits(t[0] * rw[i]), float_bits(t[1] * rw[i]));
 		gv[i].xyz = xyz_from(sx[i], sy[i], iz);
 	}
 
@@ -498,28 +483,71 @@ static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
 	prof.triangles += n - 2;
 }
 
-// vs[] in the order of a triangle strip (0,1,2 and 1,2,3) to a polygon, in
-// clip space, with each position already transformed and its w given.
-static void draw_vs(const int *order, int n, const float *w, uint16_t texture_index) {
-	uint32_t t0 = prof_cycles();
-	prof.polys++;
-	clip_vertex_t poly[4];
-	for (int i = 0; i < n; i++) {
-		const render_vertex_t *v = &vs[order[i]];
-		poly[i].x = v->x;
-		poly[i].y = v->y;
-		poly[i].z = v->z;
-		poly[i].w = w[order[i]];
-		poly[i].u = v->u;
-		poly[i].v = v->v;
-		poly[i].color = rgba_from_argb(v->argb);
-	}
-	draw_clip_poly(poly, n, texture_index);
-	prof.render += prof_cycles() - t0;
-}
+#define CLIP_STRIDE (sizeof(clip_vertex_t) / sizeof(float))
 
 static const int quad_order[4] = {0, 1, 3, 2};
 static const int tri_order[3] = {0, 1, 2};
+
+// vs[] in the order of a triangle strip (0,1,2 and 1,2,3) to a polygon, in
+// clip space, with each position already transformed and its w given.
+// Polygons wholly off screen are dropped before anything is copied; those
+// wholly inside the near plane and guard band, nearly all of them, are drawn
+// straight from vs[]. Only the rest go through the clipper.
+static void draw_vs(const int *order, int n, const float *w, uint16_t texture_index) {
+	uint32_t t0 = prof_cycles();
+	prof.polys++;
+
+	int all_out = ~0, any_out = 0;
+	for (int i = 0; i < n; i++) {
+		const render_vertex_t *v = &vs[order[i]];
+		clip_vertex_t c = {.x = v->x, .y = v->y, .z = v->z, .w = w[order[i]]};
+		all_out &= outcode(&c);
+		any_out |= needs_clip(&c);
+	}
+	if (all_out) {
+		prof.render += prof_cycles() - t0;
+		return;
+	}
+
+	if (!any_out) {
+		if (order == quad_order) {
+			// A quad's strip order 0 1 3 2 as a polygon: draw from a reordered
+			// copy of the four, as the strides can't express it.
+			render_vertex_t q[4] = {vs[0], vs[1], vs[3], vs[2]};
+			float qw[4] = {w[0], w[1], w[3], w[2]};
+			draw_projected(4, &q[0].x, sizeof(render_vertex_t) / sizeof(float), qw, 1,
+				&q[0].u, sizeof(render_vertex_t) / sizeof(float),
+				&q[0].argb, sizeof(render_vertex_t) / sizeof(uint32_t), texture_index);
+		}
+		else {
+			draw_projected(n, &vs[0].x, sizeof(render_vertex_t) / sizeof(float), w, 1,
+				&vs[0].u, sizeof(render_vertex_t) / sizeof(float),
+				&vs[0].argb, sizeof(render_vertex_t) / sizeof(uint32_t), texture_index);
+		}
+		prof.render += prof_cycles() - t0;
+		return;
+	}
+
+	clip_vertex_t poly[4];
+	for (int i = 0; i < n; i++) {
+		const render_vertex_t *v = &vs[order[i]];
+		poly[i] = (clip_vertex_t){v->x, v->y, v->z, w[order[i]], v->u, v->v, v->argb};
+	}
+	clip_vertex_t buf_a[CLIP_MAX], buf_b[CLIP_MAX];
+	clip_vertex_t *src = poly, *dst = buf_a;
+	for (int p = 0; p < (int)(sizeof(clip_planes) / sizeof(clip_planes[0])); p++) {
+		n = clip_poly(src, n, dst, clip_planes[p]);
+		if (n < 3) {
+			prof.render += prof_cycles() - t0;
+			return;
+		}
+		src = dst;
+		dst = (dst == buf_a) ? buf_b : buf_a;
+	}
+	draw_projected(n, &src[0].x, CLIP_STRIDE, &src[0].w, CLIP_STRIDE, &src[0].u, CLIP_STRIDE,
+		&src[0].argb, CLIP_STRIDE, texture_index);
+	prof.render += prof_cycles() - t0;
+}
 
 // Transform vs[0..n) by the current matrix into clip space, keeping w.
 static void transform_vs(int n, float *w) {
