@@ -9,11 +9,10 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Stages 0–5 are done. In PCSX2 the pad drives the game from the title screen
-  through the menus into a race, with 3D drawn as Gouraud-shaded polygons and 2D
-  as flat rectangles. Textures are stand-in colours per texture index until
-  stage 6. Menus run at 60fps, races at about 30fps (performance is stage 10).
-  Sound and saves are stubs. Next up: stage 6.
+- Stages 0–6 are done. In PCSX2 the pad drives the game from the title screen
+  through the menus into a race, fully textured and blended. Menus run at 60fps,
+  races at about 30fps (performance is stage 10). Sound and saves are stubs.
+  Next up: stage 7.
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -78,6 +77,17 @@ Read it before starting work on a stage.
   3D follows `render_dc.c`'s maths, with a general polygon clipper (near plane +
   GS guard band) in place of its hand-written quad cases. Depth is 1/w in a
   16-bit Z-buffer, GEQUAL.
+- PS2 textures: every texture stays in RAM, padded to powers of two as on the
+  Dreamcast (game code divides UVs by `render_texture_padsize()`). The game hands
+  over 16-bit colours, but nearly all textures have 16 or 256 colours at most, so
+  `render_texture_create()` stores them as PSMT4/PSMT8 indices plus a 16-bit CLUT.
+  VRAM after gsKit's buffers is a cache, emptied when full; uploads are logged
+  once a second (`textures: N uploads ...`). A race on track02 uploads 584 KB once.
+  Textured colours are halved, since the GS modulates with 128 as 1.0.
+- Blend modes map onto the GS alpha formula exactly, except two only the Dreamcast
+  renderer uses. Boost/item pads have PS1-scale colours (128 is 1.0, as in
+  wipeout-rewrite), which the GS's modulate does natively: they're drawn unhalved
+  in one pass, where the Dreamcast drew them twice with blending.
 - 16:9 is anamorphic as on the Dreamcast: layout 640x360, 16:9 projection, output
   fills all lines. Menu/HUD code checks `platform_screen_size().y == 360`.
 - Known bug: `sfx_load()` in `sfx_dc.c` clears `nodes->data` in a loop without
@@ -88,7 +98,7 @@ Read it before starting work on a stage.
   to slow software emulation. Avoid doubles.
 - GS: 4 MB VRAM. It's reached only through DMA/GIF packets, never mapped into CPU memory.
   A 640×480 double-buffered 32-bit framebuffer plus a 16-bit Z-buffer uses about
-  3 MB, which leaves about 1 MB for textures.
+  3 MB, which leaves about 1 MB for textures (1056 KB in VGA mode).
 - Hardware errata from Sony's restrictions doc (`RESTRI_E.PDF`) that affect us:
   - Don't toggle the GS depth test off (ZTE=0). Use ZTE=1, ZTST=ALWAYS and
     ZBUF.ZMSK=1 instead.

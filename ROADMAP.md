@@ -23,7 +23,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 3 | 2D on screen ✅ | Title screen and menus visible (untextured) |
 | 4 | Pad input ✅ | Can navigate menus and start a race |
 | 5 | 3D untextured ✅ | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
-| 6 | Textures and blending | The game looks right |
+| 6 | Textures and blending ✅ | The game looks right |
 | 7 | Sound | Sound effects and music in menus and races |
 | 8 | Saves | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
@@ -89,11 +89,17 @@ is part of stage 10.
 - Read: GS manual, GDC 2002 PS2 clipping paper.
 
 ### 6. Textures and blending
-- Start with the existing 16-bit textures.
-- **Spike:** keep textures in their original 4/8-bit paletted form (PSMT4/PSMT8).
-  It's ¼ to ½ the VRAM of 16-bit, which matters with about 1 MB left for textures.
-  Keep every texture in main RAM and upload what each frame needs.
-- Map the six `render_blend_mode_t` modes onto the GS alpha formula.
+Done in PCSX2: textures from a VRAM cache, perspective-correct, with the game's
+filtering setting; the six blend modes; boost pads at the PS1's double brightness,
+as in wipeout-rewrite, in one pass. VGA became the
+default build, for square pixels in screenshots.
+- The 16-bit-only first version thrashed in races: about 1.6 MB of textures a
+  frame against 1056 KB of VRAM, at 20fps.
+- The paletted spike worked without game code changes: textures with 16 or 256
+  colours become PSMT4/PSMT8 when created. In a race 181 of 206 are 4-bit, the
+  race uploads 584 KB once, and it's back to 30fps.
+- Not done: the Dreamcast's sky-texture column shifting (a fix for seams with
+  filtering) and its per-track DECAL texturing; neither showed a problem.
 
 ### 7. Sound
 - audsrv for sound effects and music. Go to SPU2 level only if audsrv isn't enough.
@@ -113,6 +119,10 @@ is part of stage 10.
 ### 10. Performance
 - Profile first. A C + VU0 macro-mode CPU path may already reach 60fps.
 - VU1 transform/clip microcode if needed. Reference: ps2gl's `vu1/` renderers.
+- Texture loading: `render_texture_create()` finds each texture's colours to store
+  it paletted (stage 6), work that `image.c` throws away when it expands the PS1's
+  indices to 16-bit. Measure load times; if it matters, a paletted create call fed
+  from `image.c` (or a precomputed table) skips it.
 
 ## Architecture decisions
 
