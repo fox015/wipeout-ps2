@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sio.h>
 #include <timer.h>
+#include <time.h>
 
 #include "platform.h"
 #include "render.h"
@@ -110,6 +111,13 @@ int main(int argc, char *argv[]) {
 	pad_init();
 	iop_load_sound_modules();
 	system_init();
+
+	// game_init() seeds rand() from platform_now(), which counts from its own
+	// first call: always 0 here, so every boot got the same weapon pickups.
+	// Seed again from the real-time clock.
+	time_t now = time(NULL);
+	srand((unsigned)now);
+	printf("rand: seeded from the clock (%u)\n", (unsigned)now);
 
 	// No display yet (stage 3), so log a frame count once a second instead.
 	uint32_t frames = 0;

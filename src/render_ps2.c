@@ -588,6 +588,16 @@ void render_push_2d(vec2i_t pos, vec2i_t size, rgba_t color, uint16_t texture) {
 }
 
 void render_push_2d_tile(vec2i_t pos, vec2i_t uv_offset, vec2i_t uv_size, vec2i_t size, rgba_t color, uint16_t texture_index) {
+	// Skip anything off screen. The credits scroll their early lines thousands
+	// of pixels above it, past the GS's +-2048, where corners wrap round and
+	// drew glyphs stretched across the whole screen.
+	if (
+		pos.x + size.x <= 0 || pos.x >= screen_size.x ||
+		pos.y + size.y <= 0 || pos.y >= screen_size.y
+	) {
+		return;
+	}
+
 	int saved_test = depth_test, saved_write = depth_write;
 	depth_test = 0;
 	depth_write = 0;
