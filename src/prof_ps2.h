@@ -23,6 +23,8 @@ typedef struct {
 	uint32_t polys;     // polygons the game submitted
 	uint32_t xform;     // cycles of render spent transforming vertices
 	uint32_t verts;     // vertices transformed
+	uint32_t upload;    // cycles uploading textures to VRAM
+	uint32_t uploads;   // textures uploaded
 } prof_counters_t;
 
 extern prof_counters_t prof;

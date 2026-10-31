@@ -906,6 +906,7 @@ static void textures_vram_clear(void) {
 }
 
 static void texture_upload(texture_t *t) {
+	uint32_t t0 = prof_cycles();
 	uint32_t blocks = t->blocks + (t->clut ? clut_blocks(t->psm) : 0);
 	if (vram_next + blocks > VRAM_BLOCKS) {
 		textures_vram_clear();
@@ -928,6 +929,8 @@ static void texture_upload(texture_t *t) {
 
 	stat_uploads++;
 	stat_bytes += bytes;
+	prof.upload += prof_cycles() - t0;
+	prof.uploads++;
 }
 
 static int is_textured(uint16_t texture_index) {
