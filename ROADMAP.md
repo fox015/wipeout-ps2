@@ -9,9 +9,9 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 ## Targets
 - **60fps, locked to vsync**, on real hardware. (Higher isn't meaningful: the PS2
   outputs at 60Hz NTSC/480p/VGA or 50Hz PAL.)
-- **Real hardware is a regular check, not only the last stage.** Boot on the console
-  at the end of stages 2, 3, 6 and 7 at least. PCSX2 hides DMA, timing and
-  alignment bugs.
+- **Real hardware comes at stage 9.** Until the console is set up, each stage is
+  checked in PCSX2 only. PCSX2 hides DMA, timing and alignment bugs, so stage 9
+  starts with a checklist of what only hardware can confirm (see stage 9).
 
 ## Stages
 
@@ -23,11 +23,12 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 3 | 2D on screen ✅ | Title screen and menus visible (untextured) |
 | 4 | Pad input ✅ | Can navigate menus and start a race |
 | 5 | 3D untextured ✅ | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
-| 6 | Textures and blending | The game looks right |
+| 6 | Textures and blending ✅ | The game looks right |
 | 7 | Sound | Sound effects and music in menus and races |
 | 8 | Saves | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
 | 10 | Performance | Holds 60fps on real hardware in a full race |
+| 11 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
 
 ### 0. Build tooling
 - Devcontainer on a pinned `ps2dev/ps2dev` tag, with the repo mounted at the same
@@ -89,20 +90,31 @@ is part of stage 10.
 - Read: GS manual, GDC 2002 PS2 clipping paper.
 
 ### 6. Textures and blending
-- Start with the existing 16-bit textures.
-- **Spike:** keep textures in their original 4/8-bit paletted form (PSMT4/PSMT8).
-  It's ¼ to ½ the VRAM of 16-bit, which matters with about 1 MB left for textures.
-  Keep every texture in main RAM and upload what each frame needs.
-- Map the six `render_blend_mode_t` modes onto the GS alpha formula.
+Done in PCSX2: textures from a VRAM cache, perspective-correct, with the game's
+filtering setting; the six blend modes; boost pads at the PS1's double brightness,
+as in wipeout-rewrite, in one pass. VGA became the
+default build, for square pixels in screenshots.
+- The 16-bit-only first version thrashed in races: about 1.6 MB of textures a
+  frame against 1056 KB of VRAM, at 20fps.
+- The paletted spike worked without game code changes: textures with 16 or 256
+  colours become PSMT4/PSMT8 when created. In a race 181 of 206 are 4-bit, the
+  race uploads 584 KB once, and it's back to 30fps.
+- Not done: the Dreamcast's sky-texture column shifting (a fix for seams with
+  filtering) and its per-track DECAL texturing; neither showed a problem.
 
 ### 7. Sound
 - audsrv for sound effects and music. Go to SPU2 level only if audsrv isn't enough.
+- Reverb in tunnels, as on the PS1 (missing in wipeout-rewrite): the SPU2 has
+  hardware reverb. See `docs/FEATURES.md`.
+- Extra, if time allows: the intro video. The IPU decodes MPEG in hardware.
 - Read: ps2sdk IOP module source, ps2tek, PCSX2's SPU2 code.
 
 ### 8. Saves
 - libmc in place of the VMU code.
 
 ### 9. Real hardware and packaging
+- Checklist from earlier stages: DMA, alignment and timing (PCSX2 tolerates what
+  hardware doesn't); the thin black band at the bottom in VGA mode under PCSX2.
 - ps2link + ps2client over the network for development.
 - Decide how a console finds the game data (it isn't redistributable): USB,
   a disc image the user builds, or `host:`.
@@ -111,6 +123,24 @@ is part of stage 10.
 ### 10. Performance
 - Profile first. A C + VU0 macro-mode CPU path may already reach 60fps.
 - VU1 transform/clip microcode if needed. Reference: ps2gl's `vu1/` renderers.
+- Texture loading: `render_texture_create()` finds each texture's colours to store
+  it paletted (stage 6), work that `image.c` throws away when it expands the PS1's
+  indices to 16-bit. Measure load times; if it matters, a paletted create call fed
+  from `image.c` (or a precomputed table) skips it.
+
+### 11. Our enhancements
+- **neGcon.** The original PS1 wipEout supported Namco's twist controller, and the
+  PS2's BIOS pad driver identifies it (libpad's `PAD_TYPE_NEJICON`). Map the twist
+  to steering and the analog I, II and L buttons to thrust, fire and airbrake, and
+  find out what libpad reports for each axis. Test with a real neGcon.
+- **Video options in the menu**, chosen at run time instead of `make VIDEO=`:
+  - 480i and 576i (PAL 50Hz), 480p and 576p (component), 640×480 VGA.
+  - 16:9 anamorphic for widescreen TVs (works already) next to 4:3.
+  - gsKit also has VGA up to 1280×1024, and 720p and 1080i over component. None
+    fits double-buffered 32-bit in 4 MB of VRAM: they'd need 16-bit buffers,
+    half-height fields or a smaller rendered image, and the fill rate to match.
+    800×600 VGA with 16-bit buffers is the likeliest of them.
+  - PAL runs at 50fps; the physics already scale with frame time.
 
 ## Architecture decisions
 
@@ -142,6 +172,9 @@ The SH4 matrix assembly and `noxform` transforms become plain C first. VU0
 macro-mode only where profiling shows it's needed.
 
 ## Open questions
-- Frame (full-height) or field rendering for 480i. Decide in stage 3.
-- Whether 800×600 VGA with 16-bit framebuffers is worth the fill rate and VRAM.
+- Full-height or half-height rendering for 480i. Full-height (640x448, the GS's
+  FIELD mode, FFMD=0) is what gsKit does by default and what we use; half-height
+  (640x224 per field, FRAME mode) halves VRAM and fill rate but is softer.
+- Whether 800×600 VGA with 16-bit framebuffers is worth the fill rate and VRAM
+  (stage 11).
 - How game data ships to a real console (stage 9).

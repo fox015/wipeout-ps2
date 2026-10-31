@@ -9,11 +9,10 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Stages 0–5 are done. In PCSX2 the pad drives the game from the title screen
-  through the menus into a race, with 3D drawn as Gouraud-shaded polygons and 2D
-  as flat rectangles. Textures are stand-in colours per texture index until
-  stage 6. Menus run at 60fps, races at about 30fps (performance is stage 10).
-  Sound and saves are stubs. Next up: stage 6.
+- Stages 0–6 are done. In PCSX2 the pad drives the game from the title screen
+  through the menus into a race, fully textured and blended. Menus run at 60fps,
+  races at about 30fps (performance is stage 10). Sound and saves are stubs.
+  Next up: stage 7.
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -23,7 +22,8 @@ Read it before starting work on a stage.
   PCSX2's `host:` root is the folder the `.elf` is in, so the game reads it as
   `host:wipeout/...`. Never download or extract game data yourself.
 - The controls page's 3D model of a Dreamcast pad (`dcpad.bin`) is Dreamcast-only
-  (`#if defined(_arch_dreamcast)` in `main_menu.c`); on PS2 that page shows no model.
+  (`#if defined(_arch_dreamcast)` in `main_menu.c`); elsewhere it shows the PS1 pad
+  from the game data (`pad1.prm`), as wipeout-rewrite does.
 
 ## How changes land
 - One branch and one PR per roadmap stage. Inside a PR, each commit does one thing.
@@ -78,6 +78,17 @@ Read it before starting work on a stage.
   3D follows `render_dc.c`'s maths, with a general polygon clipper (near plane +
   GS guard band) in place of its hand-written quad cases. Depth is 1/w in a
   16-bit Z-buffer, GEQUAL.
+- PS2 textures: every texture stays in RAM, padded to powers of two as on the
+  Dreamcast (game code divides UVs by `render_texture_padsize()`). The game hands
+  over 16-bit colours, but nearly all textures have 16 or 256 colours at most, so
+  `render_texture_create()` stores them as PSMT4/PSMT8 indices plus a 16-bit CLUT.
+  VRAM after gsKit's buffers is a cache, emptied when full; uploads are logged
+  once a second (`textures: N uploads ...`). A race on track02 uploads 584 KB once.
+  Textured colours are halved, since the GS modulates with 128 as 1.0.
+- Blend modes map onto the GS alpha formula exactly, except two only the Dreamcast
+  renderer uses. Boost/item pads have PS1-scale colours (128 is 1.0, as in
+  wipeout-rewrite), which the GS's modulate does natively: they're drawn unhalved
+  in one pass, where the Dreamcast drew them twice with blending.
 - 16:9 is anamorphic as on the Dreamcast: layout 640x360, 16:9 projection, output
   fills all lines. Menu/HUD code checks `platform_screen_size().y == 360`.
 - Known bug: `sfx_load()` in `sfx_dc.c` clears `nodes->data` in a loop without
@@ -88,7 +99,7 @@ Read it before starting work on a stage.
   to slow software emulation. Avoid doubles.
 - GS: 4 MB VRAM. It's reached only through DMA/GIF packets, never mapped into CPU memory.
   A 640×480 double-buffered 32-bit framebuffer plus a 16-bit Z-buffer uses about
-  3 MB, which leaves about 1 MB for textures.
+  3 MB, which leaves about 1 MB for textures (1056 KB in VGA mode).
 - Hardware errata from Sony's restrictions doc (`RESTRI_E.PDF`) that affect us:
   - Don't toggle the GS depth test off (ZTE=0). Use ZTE=1, ZTST=ALWAYS and
     ZBUF.ZMSK=1 instead.
@@ -128,8 +139,8 @@ Read it before starting work on a stage.
 - Logging: `platform_ps2.c` makes stdout and stderr line-buffered streams that
   write to the serial port, which PCSX2 copies to emuLog.txt. Use plain `printf()`.
   (`sio_puts()` appends its own newline, so avoid it for log lines.)
-- Display output is a build option: `make VIDEO=480i|480p|vga` (default 480i).
-  `build_and_run.sh` always builds the default; for another mode, run make with
+- Display output is a build option: `make VIDEO=480i|480p|vga` (default vga: 640x480, square pixels, matching the game's layout 1:1;
+  480i is 640x448 field-rendered, scaled from 480 lines).  `build_and_run.sh` always builds the default; for another mode, run make with
   VIDEO in the container, then `build_and_run.sh --no-build`.
 - Screenshots: the user granted the Claude app Accessibility permission, so
   `build_and_run.sh --shot` (F8 to PCSX2) works; read the PNG from
