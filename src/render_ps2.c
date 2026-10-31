@@ -69,6 +69,12 @@ static float shake_x = 320.0f;
 static float shake_y = 240.0f;
 static float shake_count = 0.0f;
 
+// Clip space to GS XYZ2 coordinates (12.4 fixed point, drawing offset added)
+// in one multiply-add per axis: x * kx / w + bx. Kept up to date with the
+// output height and the screen shake by update_screen_xform().
+static float screen_kx, screen_bx, screen_ky, screen_by;
+static void update_screen_xform(void);
+
 // GS state as last sent, so register writes are only queued on a change.
 static int depth_test = 1;
 static int depth_write = 1;
@@ -117,6 +123,7 @@ void render_init(void) {
 	gs_packet_init();
 
 	scale_y = (float)gs->Height / 480.0f;
+	update_screen_xform();
 	printf("GS: %dx%d, interlace %d, field %d, offset %d,%d, zbuf 0x%x\n",
 		gs->Width, gs->Height, gs->Interlace, gs->Field,
 		gs->OffsetX, gs->OffsetY, (unsigned)gs->ZBuffer);
@@ -130,10 +137,6 @@ void render_cleanup(void) {}
 
 // ---------------------------------------------------------------------------
 // Colour
-
-static rgba_t rgba_from_argb(uint32_t argb) {
-	return rgba((argb >> 16) & 0xff, (argb >> 8) & 0xff, argb & 0xff, argb >> 24);
-}
 
 static uint32_t float_bits(float f) {
 	union { float f; uint32_t u; } bits = {f};
@@ -156,6 +159,18 @@ static u64 rgbaq_from(rgba_t c, int textured, float q) {
 	return GS_SET_RGBAQ(c.r, c.g, c.b, (c.a + 1) >> 1, float_bits(q));
 }
 
+// rgbaq_from() for the game's packed ARGB, with bit operations instead of a
+// round trip through rgba_t: red and blue swap places, and (c + 1) >> 1
+// halves each channel with rounding.
+static u64 rgbaq_from_argb(uint32_t argb, int textured, float q) {
+	uint32_t rgb = ((argb >> 16) & 0xff) | (argb & 0xff00) | ((argb & 0xff) << 16);
+	if (textured && !ps1_colors) {
+		rgb = ((rgb >> 1) & 0x7f7f7f) + (rgb & 0x010101);
+	}
+	uint32_t a = ((argb >> 24) + 1) >> 1;
+	return (u64)(rgb | a << 24) | (u64)float_bits(q) << 32;
+}
+
 // ---------------------------------------------------------------------------
 // GS state
 
@@ -170,7 +185,14 @@ static u64 xyz_from(float x, float y, uint32_t z) {
 // misbehave. "Off" is ZTE=1 with ZTST=ALWAYS instead.
 // The alpha test drops pixels with alpha 0 (transparent texels) without
 // writing colour or Z.
+static int synced_depth = -1; // depth_test | depth_write << 1 when last synced
+
 static void sync_depth_state(void) {
+	int key = depth_test | depth_write << 1;
+	if (key == synced_depth) {
+		return;
+	}
+	synced_depth = key;
 	u64 test = GS_SET_TEST(1, 6, 0, 0, 0, 0, 1, depth_test ? 2 : 1); // alpha > 0; GEQUAL : ALWAYS
 	u64 zbuf = GS_SET_ZBUF(gs->ZBuffer / 8192, gs->PSMZ, depth_write ? 0 : 1);
 	if (test != sent_test) {
@@ -205,7 +227,13 @@ static u64 blend_alpha(render_blend_mode_t mode) {
 	}
 }
 
+static int synced_blend = -1;
+
 static void sync_blend_state(void) {
+	if ((int)render_state.blend_mode == synced_blend) {
+		return;
+	}
+	synced_blend = render_state.blend_mode;
 	u64 alpha = blend_alpha(render_state.blend_mode);
 	if (alpha != sent_alpha) {
 		gs_set_reg(GS_REG_ALPHA, alpha);
@@ -225,6 +253,7 @@ void render_frame_prepare(void) {
 
 	gs_set_reg(GS_REG_COLCLAMP, GS_SET_COLCLAMP(1));
 	sent_test = sent_zbuf = sent_alpha = ~0ull;
+	synced_depth = synced_blend = -1;
 	textures_frame_start();
 	render_set_depth_write(true);
 	render_set_depth_test(true);
@@ -349,6 +378,13 @@ void render_set_cull_backface(bool enabled) { cull_backface = enabled; }
 // ---------------------------------------------------------------------------
 // Screen shake from weapon hits (as on the Dreamcast)
 
+static void update_screen_xform(void) {
+	screen_kx = 320.0f * 16.0f;
+	screen_bx = shake_x * 16.0f + gs->OffsetX;
+	screen_ky = -240.0f * scale_y * 16.0f;
+	screen_by = shake_y * scale_y * 16.0f + gs->OffsetY;
+}
+
 void SetShake(float duration) {
 	shake_count = duration / 30.0f;
 }
@@ -359,10 +395,12 @@ void ShakeScreen(void) {
 		shake_x = 320.0f + rand_float(-s, s);
 		shake_y = 240.0f + rand_float(-s, s);
 		shake_count -= system_tick();
-	} else {
+		update_screen_xform();
+	} else if (shake_x != 320.0f || shake_y != 240.0f) {
 		shake_x = 320.0f;
 		shake_y = 240.0f;
 		shake_count = 0.0f;
+		update_screen_xform();
 	}
 }
 
@@ -442,12 +480,14 @@ static void draw_projected(int n, const float *pos, int pos_stride, const float 
 		const float *uv, int uv_stride, const uint32_t *argb, int argb_stride, uint16_t texture_index) {
 	// Project first: the back-face test needs only screen x and y, so culled
 	// polygons skip building GS vertices.
+	// sx, sy are GS coordinates already (x16, offset); scaled and shifted
+	// screen positions, so the area's sign is the same.
 	float sx[CLIP_MAX], sy[CLIP_MAX], rw[CLIP_MAX];
 	for (int i = 0; i < n; i++) {
 		const float *p = pos + i * pos_stride;
 		rw[i] = 1.0f / w[i * w_stride];
-		sx[i] = shake_x + 320.0f * p[0] * rw[i];
-		sy[i] = shake_y - 240.0f * p[1] * rw[i];
+		sx[i] = p[0] * rw[i] * screen_kx + screen_bx;
+		sy[i] = p[1] * rw[i] * screen_ky + screen_by;
 	}
 
 	if (cull_backface) {
@@ -467,9 +507,9 @@ static void draw_projected(int n, const float *pos, int pos_stride, const float 
 		const float *t = uv + i * uv_stride;
 		float z = rw[i] * Z_SCALE;
 		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
-		gv[i].rgbaq = rgbaq_from(rgba_from_argb(argb[i * argb_stride]), textured, rw[i]);
+		gv[i].rgbaq = rgbaq_from_argb(argb[i * argb_stride], textured, rw[i]);
 		gv[i].uv = GS_SET_ST(float_bits(t[0] * rw[i]), float_bits(t[1] * rw[i]));
-		gv[i].xyz = xyz_from(sx[i], sy[i], iz);
+		gv[i].xyz = GS_SET_XYZ((int)sx[i], (int)sy[i], iz);
 	}
 
 	sync_depth_state();
@@ -718,7 +758,7 @@ static uint32_t vram_start; // first block after gsKit's buffers
 static uint32_t vram_next;
 
 static int32_t sent_texture = -1;
-static u64 sent_tex1 = ~0ull;
+static int sent_filter = -1;
 
 // Upload counts, logged once a second, and what the textures were stored as.
 static uint32_t stat_frames, stat_uploads, stat_bytes, stat_resets;
@@ -862,10 +902,9 @@ static void texture_bind(uint16_t texture_index) {
 		sent_texture = texture_index;
 	}
 	int filter = save.filter && !t->unfiltered; // 1 = bilinear
-	u64 tex1 = GS_SET_TEX1(0, 0, filter, filter, 0, 0, 0);
-	if (tex1 != sent_tex1) {
-		gs_set_reg(GS_REG_TEX1, tex1);
-		sent_tex1 = tex1;
+	if (filter != sent_filter) {
+		gs_set_reg(GS_REG_TEX1, GS_SET_TEX1(0, 0, filter, filter, 0, 0, 0));
+		sent_filter = filter;
 	}
 }
 
@@ -874,7 +913,7 @@ static void textures_frame_start(void) {
 	gs_set_reg(GS_REG_TEXA, GS_SET_TEXA(0x00, 0, 0x80));
 	gs_set_reg(GS_REG_CLAMP, GS_SET_CLAMP(0, 0, 0, 0, 0, 0)); // repeat
 	sent_texture = -1;
-	sent_tex1 = ~0ull;
+	sent_filter = -1;
 }
 
 static void textures_frame_end(void) {
