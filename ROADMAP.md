@@ -183,19 +183,6 @@ so the VU1 rewrite stays inside `render_ps2.c`.
 The SH4 matrix assembly and `noxform` transforms become plain C first. VU0
 macro-mode only where profiling shows it's needed.
 
-## Known bugs
-Seen in PCSX2, not yet investigated.
-- Weapons: only mines and the shield have been seen; no projectile (rockets,
-  missiles, electro-bolt, plasma) leaves the ship. Not yet known whether they're
-  invisible, never fired, or just never picked up: a debug build that forces
-  each weapon type will tell. Missile triangles carry a Dreamcast offset colour
-  (`pad1 == 1000` in `weapon.c`, `oargb` in `object.c`) that the PS2 ignores; that
-  drops their tint but shouldn't hide them.
-- Attract mode: grey and white vertical bars flash over the middle of the screen
-  during the credits, and some credit lines overlap. Credits are a
-  `text_scroll_menu` over the race (`race.c`); check the layout at 640x480 and
-  what draws the bars.
-
 ## Open questions
 - Full-height or half-height rendering for 480i. Full-height (640x448, the GS's
   FIELD mode, FFMD=0) is what gsKit does by default and what we use; half-height
