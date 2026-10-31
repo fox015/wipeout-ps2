@@ -110,6 +110,8 @@ void race_update(void) {
 		ships_update();
 		droid_update(&g.droid, &g.ships[g.pilot]);
 		camera_update(&g.camera, &g.ships[g.pilot], &g.droid);
+		// Tunnels and such: sections with more than 4 faces, as in the PS1 game.
+		sfx_set_reverb(g.camera.section->face_count > 4);
 		ShakeScreen();
 		weapons_update();
 		particles_update();

@@ -3,7 +3,8 @@
 //
 // wipeout.vb is the PS1's own ADPCM, the format the SPU2 plays, so it goes
 // into sound RAM as it is: no decoding. Each sound effect is a voice with its
-// own pitch, volume and pan, as on the PS1. Music is still a stub.
+// own pitch, volume and pan, as on the PS1. Reverb is core 0's hardware
+// effect, faded in and out for tunnels. Music is still a stub.
 
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 #include "utils.h"
 #include "mem.h"
 #include "platform.h"
+#include "system.h"
 #include "wipeout/sfx.h"
 #include "wipeout/game.h"
 #include "todo_ps2.h"
@@ -34,6 +36,12 @@ volatile uint32_t last_five_tracks[5] = {-1, -1, -1, -1, -1};
 
 // SPU2 volume 0x3fff is full scale; leave headroom for music on top.
 #define VOLUME_SCALE 0x3000
+
+// Reverb: the effect runs all the time and its return volume fades between
+// 0 and REVERB_DEPTH over REVERB_FADE seconds.
+#define REVERB_MODE  SD_EFFECT_MODE_HALL
+#define REVERB_DEPTH 0x3000
+#define REVERB_FADE  0.3f
 
 // ADPCM block flags (the second byte of each 16-byte block)
 #define BLOCK_LOOP_END    1 // last block: stop, or jump back if LOOP_REPEAT
@@ -58,6 +66,9 @@ static uint32_t num_sources;
 // wipeout.vb as uploaded, kept so a sample can be patched to loop
 static uint8_t *samples;
 static sfx_t *nodes;
+static float reverb_level;   // 0 to 1
+static uint16_t reverb_sent; // last EVOL sent
+static bool reverb_on;
 static voice_t voices[VOICES];
 static uint64_t voice_clock;
 static float unpause_sfx_volume;
@@ -155,6 +166,24 @@ static void source_set_looped(source_t *s) {
 	s->looped = 1;
 }
 
+static void reverb_set_depth(uint16_t depth) {
+	if (depth != reverb_sent) {
+		sceSdSetParam(CORE | SD_PARAM_EVOLL, depth);
+		sceSdSetParam(CORE | SD_PARAM_EVOLR, depth);
+		reverb_sent = depth;
+	}
+}
+
+void sfx_set_reverb(bool on) {
+	if (on != reverb_on) {
+		printf("sfx: reverb %s (section %d)\n", on ? "on" : "off", g.camera.section->num);
+		reverb_on = on;
+	}
+	float step = system_tick() / REVERB_FADE;
+	reverb_level = clamp(reverb_level + (on ? step : -step), 0.0f, 1.0f);
+	reverb_set_depth(reverb_level * REVERB_DEPTH);
+}
+
 void sfx_load(void) {
 	unpause_sfx_volume = 0.0f;
 
@@ -178,6 +207,17 @@ void sfx_load(void) {
 		sceSdSetParam(SD_VOICE(CORE, i) | SD_VPARAM_ADSR2, SD_SET_ADSR2(SD_ADSR_SR_LINEARi, 0x7f, SD_ADSR_RR_LINEARd, 0x8));
 		voices[i] = (voice_t){.voll = 0xffff, .volr = 0xffff, .pitch = 0xffff};
 	}
+
+	// The effect's work area is at the top of sound RAM, well above the samples.
+	sceSdEffectAttr fx = {.core = CORE, .mode = REVERB_MODE | SD_EFFECT_MODE_CLEAR};
+	sceSdSetEffectAttr(CORE, &fx);
+	sceSdSetCoreAttr(CORE | SD_CORE_EFFECT_ENABLE, 1);
+	sceSdSetSwitch(CORE | SD_SWITCH_VMIXEL, 0xffffff);
+	sceSdSetSwitch(CORE | SD_SWITCH_VMIXER, 0xffffff);
+	reverb_set_depth(0);
+	printf("sfx: reverb work area 0x%x-0x%x, mixer 0x%x\n",
+		(unsigned)sceSdGetAddr(CORE | SD_ADDR_ESA), (unsigned)sceSdGetAddr(CORE | SD_ADDR_EEA),
+		(unsigned)sceSdGetParam(CORE | SD_PARAM_MMIX));
 
 	uint32_t vb_size;
 	uint8_t *vb = platform_load_asset("wipeout/sound/wipeout.vb", &vb_size);
@@ -225,6 +265,10 @@ void sfx_stero_mix(float *buffer, uint32_t len) {}
 void sfx_set_external_mix_cb(void (*cb)(float *, uint32_t len)) {}
 
 void sfx_reset(void) {
+	reverb_on = false;
+	reverb_level = 0;
+	reverb_set_depth(0);
+
 	for (int i = 0; i < SFX_MAX; i++) {
 		sfx_t *sfx = &nodes[i];
 		if (flags_is(sfx->flags, SFX_LOOP)) {

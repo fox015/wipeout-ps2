@@ -75,6 +75,9 @@ sfx_t *sfx_reserve_loop(sfx_source_t source_index);
 void sfx_set_position(sfx_t *sfx, vec3_t pos, vec3_t vel, float volume);
 // Push changed volume/pan/pitch of a playing sound to its voice.
 void sfx_update_ex(sfx_t *sfx);
+// Reverb, as in the PS1 game's tunnels. Called each race frame; platforms
+// without hardware reverb can ignore it.
+void sfx_set_reverb(bool on);
 
 typedef enum {
 	SFX_MUSIC_PAUSED,
