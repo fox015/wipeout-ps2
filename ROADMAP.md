@@ -9,9 +9,9 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 ## Targets
 - **60fps, locked to vsync**, on real hardware. (Higher isn't meaningful: the PS2
   outputs at 60Hz NTSC/480p/VGA or 50Hz PAL.)
-- **Real hardware is a regular check, not only the last stage.** Boot on the console
-  at the end of stages 2, 3, 6 and 7 at least. PCSX2 hides DMA, timing and
-  alignment bugs.
+- **Real hardware comes at stage 9.** Until the console is set up, each stage is
+  checked in PCSX2 only. PCSX2 hides DMA, timing and alignment bugs, so stage 9
+  starts with a checklist of what only hardware can confirm (see stage 9).
 
 ## Stages
 
@@ -103,6 +103,8 @@ is part of stage 10.
 - libmc in place of the VMU code.
 
 ### 9. Real hardware and packaging
+- Checklist from earlier stages: DMA, alignment and timing (PCSX2 tolerates what
+  hardware doesn't); the thin black band at the bottom in VGA mode under PCSX2.
 - ps2link + ps2client over the network for development.
 - Decide how a console finds the game data (it isn't redistributable): USB,
   a disc image the user builds, or `host:`.
@@ -142,6 +144,8 @@ The SH4 matrix assembly and `noxform` transforms become plain C first. VU0
 macro-mode only where profiling shows it's needed.
 
 ## Open questions
-- Frame (full-height) or field rendering for 480i. Decide in stage 3.
+- Full-height or half-height rendering for 480i. Full-height (640x448, the GS's
+  FIELD mode, FFMD=0) is what gsKit does by default and what we use; half-height
+  (640x224 per field, FRAME mode) halves VRAM and fill rate but is softer.
 - Whether 800×600 VGA with 16-bit framebuffers is worth the fill rate and VRAM.
 - How game data ships to a real console (stage 9).
