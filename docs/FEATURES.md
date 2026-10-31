@@ -55,6 +55,7 @@ PS1 features missing from the leaked PC source, brought back by a later port.
 | Bonus menu: unlock Rapier class and the bonus circuit | Kept on PS2 |
 | Extended draw distance, 24-bit colour, screen shake reimplemented | |
 | Slightly less green weapon colour | `weapon.c` |
+| Brighter engine exhaust | Translucent object triangles (the exhaust, alpha 0x8C) blend as src + dst × (1 − alpha), not normal blending as upstream. The PS2 follows upstream for now; the GS can match the Dreamcast in two passes |
 | `fade`, `render_dist`, `shading` save fields | No menu entries; probably unused. Worth dropping when saves move to libmc (stage 8) |
 | A Sonic image swapped onto one Venom Terramax texture (`sonic.raw`) | Not ported |
 | 3D Dreamcast pad on the controls page (`dcpad.bin`) | Not ported; the PS2 shows the PS1 pad (`pad1.prm`) instead, as the rewrite does |
