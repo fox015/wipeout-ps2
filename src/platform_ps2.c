@@ -12,6 +12,7 @@
 #include "mem.h"
 #include "todo_ps2.h"
 #include "pad_ps2.h"
+#include "iop_ps2.h"
 
 char *path_assets = "host:";
 char *path_userdata = "host:wipeout/";
@@ -107,6 +108,7 @@ int main(int argc, char *argv[]) {
 	temp_path = mem_bump(max(strlen(path_assets), strlen(path_userdata)) + 64);
 
 	pad_init();
+	iop_load_sound_modules();
 	system_init();
 
 	// No display yet (stage 3), so log a frame count once a second instead.
