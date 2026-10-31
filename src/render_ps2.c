@@ -138,12 +138,15 @@ static uint32_t float_bits(float f) {
 	return bits.u;
 }
 
+// Set while drawing colours in the PS1's scale, where 128 is 1.0.
+static int ps1_colors = 0;
+
 // GS alpha 0x80 is fully opaque. The GS modulates a texture as
 // texture * colour / 128, and the game's colours (made for the Dreamcast) use
 // 255 for 1.0, so colours on textured polygons are halved too. q is 1/w, for
 // perspective-correct texturing (ST is divided by it).
 static u64 rgbaq_from(rgba_t c, int textured, float q) {
-	if (textured) {
+	if (textured && !ps1_colors) {
 		c.r = (c.r + 1) >> 1;
 		c.g = (c.g + 1) >> 1;
 		c.b = (c.b + 1) >> 1;
@@ -511,6 +514,18 @@ static void transform_vs(int n, float *w) {
 void render_quad(uint16_t texture_index) {
 	float w[4];
 	transform_vs(4, w);
+
+	// Boost and item pads (track.c flags them in vs[0].oargb) have colours in
+	// the PS1's scale, as in wipeout-rewrite: 128 is 1.0, so a pad's 255 is
+	// twice as bright as its texture. That's the GS's own modulate, so they're
+	// drawn unhalved. The Dreamcast, which can't brighten past 1.0, drew them
+	// twice with blending instead.
+	if (vs[0].oargb > 2) {
+		ps1_colors = 1;
+		draw_vs(quad_order, 4, w, texture_index);
+		ps1_colors = 0;
+		return;
+	}
 	draw_vs(quad_order, 4, w, texture_index);
 }
 
@@ -558,6 +573,7 @@ void render_push_sprite(vec3_t pos, vec2i_t size, uint32_t color, uint16_t textu
 		vs[i].y = p[i].y;
 		vs[i].z = p[i].z;
 		vs[i].argb = color;
+		vs[i].oargb = 0; // not a pad
 	}
 	render_quad(texture_index);
 }
