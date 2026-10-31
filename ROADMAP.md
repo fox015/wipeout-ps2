@@ -25,7 +25,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 5 | 3D untextured ✅ | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
 | 6 | Textures and blending ✅ | The game looks right |
 | 7 | Sound ✅ | Sound effects and music in menus and races |
-| 8 | Saves | Settings and best times survive a power cycle on a memory card |
+| 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
 | 10 | Performance | Holds 60fps on real hardware in a full race |
 | 11 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
@@ -117,11 +117,22 @@ Done in PCSX2, heard by the user: sound effects, music and tunnel reverb.
 - Not done: the intro video (the IPU decodes MPEG in hardware).
 
 ### 8. Saves
-- libmc in place of the VMU code.
+Done in PCSX2: settings and records save to the memory card in slot 1 and
+load at boot; a setting changed in the menus survived a reboot.
+- libmc with the BIOS's MCMAN/MCSERV (they go with the BIOS SIO2MAN the pad
+  uses). The game saves on scene changes, as on the Dreamcast; each libmc call
+  is waited for, so a save holds up that frame.
+- No card or an unformatted one: logged, and the game runs without saving.
+  It doesn't offer to format a card.
+- The browser icon is the Feisar, converted on the PS2 from the model and
+  textures the game loaded from the player's data, so no game artwork is in
+  the repo.
 
 ### 9. Real hardware and packaging
 - Checklist from earlier stages: DMA, alignment and timing (PCSX2 tolerates what
   hardware doesn't); the thin black band at the bottom in VGA mode under PCSX2.
+- Saves: on a real card, check save times (each libmc call waits) and the
+  browser icon.
 - Sound: audsrv's buffer holds only 53ms, and music is read while levels load.
   Listen for dropouts with the real data source (USB, disc or `host:`).
 - ps2link + ps2client over the network for development.

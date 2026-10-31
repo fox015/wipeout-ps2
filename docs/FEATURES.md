@@ -66,6 +66,7 @@ PS1 features missing from the leaked PC source, brought back by a later port.
 |---|---|
 | 480i, 480p or VGA output | Build option (`make VIDEO=`), not a menu setting |
 | Paletted textures | Invisible; fits a race in VRAM |
+| Saves on the memory card | Settings and records in slot 1, with the Feisar as the browser icon, made at runtime from the game data |
 | Sound effects on hardware voices | As on the PS1: the original ADPCM samples, played by the SPU2 |
 
 ## Ours
