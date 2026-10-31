@@ -175,6 +175,8 @@ void sfx_load(void) {
 	mem_temp_free(vb);
 }
 
+void sfx_set_reverb(bool on) {}
+
 void sfx_reset(void) {
 	for (int i = 0; i < SFX_MAX; i++) {
 		if (flags_is(nodes[i].flags, SFX_LOOP)) {

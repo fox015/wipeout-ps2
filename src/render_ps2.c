@@ -192,9 +192,11 @@ static u64 blend_alpha(render_blend_mode_t mode) {
 		return GS_SET_ALPHA(0, 2, 2, 2, 0x80);
 	case RENDER_BLEND_SPECIAL2:    // src + dst
 		return GS_SET_ALPHA(0, 2, 2, 1, 0x80);
-	case RENDER_BLEND_SPECIAL:     // src * dst + dst and src + dst * (1 - alpha)
-	case RENDER_BLEND_BRIGHTBRIGHT: // aren't possible on the GS. Only the
-		                            // Dreamcast renderer uses them.
+	case RENDER_BLEND_SPECIAL:     // src * dst + dst: the GS can't multiply two
+		                           // colours. The Dreamcast used it for pads only.
+	case RENDER_BLEND_BRIGHTBRIGHT: // src + dst * (1 - alpha): the Dreamcast's
+		                            // engine exhaust. Possible in two passes
+		                            // (dst * (1 - alpha), then + src); not done yet.
 	case RENDER_BLEND_NORMAL:      // src * alpha + dst * (1 - alpha)
 	default:
 		return GS_SET_ALPHA(0, 1, 0, 1, 0);

@@ -24,7 +24,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 4 | Pad input ✅ | Can navigate menus and start a race |
 | 5 | 3D untextured ✅ | Track and ships visible as flat/Gouraud polygons, correctly clipped and depth-tested |
 | 6 | Textures and blending ✅ | The game looks right |
-| 7 | Sound | Sound effects and music in menus and races |
+| 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
 | 10 | Performance | Holds 60fps on real hardware in a full race |
@@ -103,11 +103,18 @@ default build, for square pixels in screenshots.
   filtering) and its per-track DECAL texturing; neither showed a problem.
 
 ### 7. Sound
-- audsrv for sound effects and music. Go to SPU2 level only if audsrv isn't enough.
-- Reverb in tunnels, as on the PS1 (missing in wipeout-rewrite): the SPU2 has
-  hardware reverb. See `docs/FEATURES.md`.
-- Extra, if time allows: the intro video. The IPU decodes MPEG in hardware.
-- Read: ps2sdk IOP module source, ps2tek, PCSX2's SPU2 code.
+Done in PCSX2, heard by the user: sound effects, music and tunnel reverb.
+- Sound effects went to SPU2 level after all: `wipeout.vb` is the PS1's ADPCM,
+  which the SPU2 plays as it is, so it's uploaded to sound RAM once and each
+  effect is a hardware voice (ps2snd → libsd). audsrv has no per-voice pitch.
+- Music: the QOA files are read from the host as they play, decoded on the EE
+  by a thread and streamed to audsrv as PCM.
+- Reverb in tunnels, as on the PS1 (missing in wipeout-rewrite): the SPU2's
+  hardware Hall reverb, faded in where the camera's track section has more than
+  4 faces. It takes the music too.
+- audsrv mutes core 0 and every libsd init resets everything, so effects use
+  core 1 and the init order is fixed (see `sfx_ps2.c`).
+- Not done: the intro video (the IPU decodes MPEG in hardware).
 
 ### 8. Saves
 - libmc in place of the VMU code.
@@ -115,6 +122,8 @@ default build, for square pixels in screenshots.
 ### 9. Real hardware and packaging
 - Checklist from earlier stages: DMA, alignment and timing (PCSX2 tolerates what
   hardware doesn't); the thin black band at the bottom in VGA mode under PCSX2.
+- Sound: audsrv's buffer holds only 53ms, and music is read while levels load.
+  Listen for dropouts with the real data source (USB, disc or `host:`).
 - ps2link + ps2client over the network for development.
 - Decide how a console finds the game data (it isn't redistributable): USB,
   a disc image the user builds, or `host:`.
@@ -127,6 +136,9 @@ default build, for square pixels in screenshots.
   it paletted (stage 6), work that `image.c` throws away when it expands the PS1's
   indices to 16-bit. Measure load times; if it matters, a paletted create call fed
   from `image.c` (or a precomputed table) skips it.
+- Sound: each voice parameter is one RPC to the IOP (about 50us); a race makes
+  750–860 a second, 4% of the EE. ps2snd's `sceSdProcBatch` is a stub on the EE,
+  so batching them needs our own IOP module or a patched ps2snd.
 
 ### 11. Our enhancements
 - **neGcon.** The original PS1 wipEout supported Namco's twist controller, and the
@@ -170,6 +182,19 @@ so the VU1 rewrite stays inside `render_ps2.c`.
 ### SH4 code in game logic becomes C
 The SH4 matrix assembly and `noxform` transforms become plain C first. VU0
 macro-mode only where profiling shows it's needed.
+
+## Known bugs
+Seen in PCSX2, not yet investigated.
+- Weapons: only mines and the shield have been seen; no projectile (rockets,
+  missiles, electro-bolt, plasma) leaves the ship. Not yet known whether they're
+  invisible, never fired, or just never picked up: a debug build that forces
+  each weapon type will tell. Missile triangles carry a Dreamcast offset colour
+  (`pad1 == 1000` in `weapon.c`, `oargb` in `object.c`) that the PS2 ignores; that
+  drops their tint but shouldn't hide them.
+- Attract mode: grey and white vertical bars flash over the middle of the screen
+  during the credits, and some credit lines overlap. Credits are a
+  `text_scroll_menu` over the race (`race.c`); check the layout at 640x480 and
+  what draws the bars.
 
 ## Open questions
 - Full-height or half-height rendering for 480i. Full-height (640x448, the GS's
