@@ -583,7 +583,10 @@ void game_init(void) {
 	input_bind(INPUT_LAYER_SYSTEM, INPUT_GAMEPAD_L_STICK_LEFT, A_MENU_LEFT);
 	input_bind(INPUT_LAYER_SYSTEM, INPUT_GAMEPAD_L_STICK_RIGHT, A_MENU_RIGHT);
 
+#if !defined(_EE)
+	// On PS2 this is Square: PlayStation menus go back with Circle only.
 	input_bind(INPUT_LAYER_SYSTEM, INPUT_GAMEPAD_X, A_MENU_BACK);
+#endif
 	input_bind(INPUT_LAYER_SYSTEM, INPUT_GAMEPAD_B, A_MENU_BACK);
 
 	input_bind(INPUT_LAYER_SYSTEM, INPUT_GAMEPAD_A, A_MENU_SELECT);
