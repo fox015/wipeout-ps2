@@ -28,6 +28,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 8 | Saves | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
 | 10 | Performance | Holds 60fps on real hardware in a full race |
+| 11 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
 
 ### 0. Build tooling
 - Devcontainer on a pinned `ps2dev/ps2dev` tag, with the repo mounted at the same
@@ -127,6 +128,20 @@ default build, for square pixels in screenshots.
   indices to 16-bit. Measure load times; if it matters, a paletted create call fed
   from `image.c` (or a precomputed table) skips it.
 
+### 11. Our enhancements
+- **neGcon.** The original PS1 wipEout supported Namco's twist controller, and the
+  PS2's BIOS pad driver identifies it (libpad's `PAD_TYPE_NEJICON`). Map the twist
+  to steering and the analog I, II and L buttons to thrust, fire and airbrake, and
+  find out what libpad reports for each axis. Test with a real neGcon.
+- **Video options in the menu**, chosen at run time instead of `make VIDEO=`:
+  - 480i and 576i (PAL 50Hz), 480p and 576p (component), 640×480 VGA.
+  - 16:9 anamorphic for widescreen TVs (works already) next to 4:3.
+  - gsKit also has VGA up to 1280×1024, and 720p and 1080i over component. None
+    fits double-buffered 32-bit in 4 MB of VRAM: they'd need 16-bit buffers,
+    half-height fields or a smaller rendered image, and the fill rate to match.
+    800×600 VGA with 16-bit buffers is the likeliest of them.
+  - PAL runs at 50fps; the physics already scale with frame time.
+
 ## Architecture decisions
 
 ### Keep the Dreamcast fork's game code, replace its render seam
@@ -160,5 +175,6 @@ macro-mode only where profiling shows it's needed.
 - Full-height or half-height rendering for 480i. Full-height (640x448, the GS's
   FIELD mode, FFMD=0) is what gsKit does by default and what we use; half-height
   (640x224 per field, FRAME mode) halves VRAM and fill rate but is softer.
-- Whether 800×600 VGA with 16-bit framebuffers is worth the fill rate and VRAM.
+- Whether 800×600 VGA with 16-bit framebuffers is worth the fill rate and VRAM
+  (stage 11).
 - How game data ships to a real console (stage 9).
