@@ -37,6 +37,7 @@ static struct {
 	struct { Object *stopwatch, *save, *load, *headphones, *cd; } options;
 	struct { Object *championship, *msdos, *single_race, *options; } misc;
 	Object *rescue;
+	Object *controller; // the PS1 pad, everywhere but the Dreamcast
 } models;
 
 extern int test_en;
@@ -158,6 +159,8 @@ static void page_options_draw(menu_t *menu, int data) {
 #if defined(_arch_dreamcast)
 		// The Dreamcast controller model (dcpad.bin) only exists on the Dreamcast.
 		case 0: draw_controller(vec2(0, -0.1), vec3(0, 0, -250), -2.0f * system_cycle_time()); break;
+#else
+		case 0: draw_model(models.controller, vec2(0, -0.1), vec3(0, 0, -6000), -2.0f * system_cycle_time()); break;
 #endif
 		case 1: draw_model(models.rescue, vec2(0, -0.2), vec3(0, 0, -700), -2.0f * system_cycle_time()); break; // TODO: needs better model
 		case 2: draw_model(models.options.headphones, vec2(0, -0.2), vec3(0, 0, -300), -2.0f * system_cycle_time()); break;
@@ -863,6 +866,9 @@ void main_menu_init(void) {
 	render_state.LOAD_UNFILTERED = 0;
 
 	objects_unpack(models.rescue, objects_load("wipeout/common/rescu.prm", image_get_compressed_textures("wipeout/common/rescu.cmp")));
+#if !defined(_arch_dreamcast)
+	objects_unpack(models.controller, objects_load("wipeout/common/pad1.prm", image_get_compressed_textures("wipeout/common/pad1.cmp")));
+#endif
 
 	render_state.LOAD_UNFILTERED = 1;
 #if defined(_arch_dreamcast)

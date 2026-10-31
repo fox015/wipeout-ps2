@@ -22,7 +22,8 @@ Read it before starting work on a stage.
   PCSX2's `host:` root is the folder the `.elf` is in, so the game reads it as
   `host:wipeout/...`. Never download or extract game data yourself.
 - The controls page's 3D model of a Dreamcast pad (`dcpad.bin`) is Dreamcast-only
-  (`#if defined(_arch_dreamcast)` in `main_menu.c`); on PS2 that page shows no model.
+  (`#if defined(_arch_dreamcast)` in `main_menu.c`); elsewhere it shows the PS1 pad
+  from the game data (`pad1.prm`), as wipeout-rewrite does.
 
 ## How changes land
 - One branch and one PR per roadmap stage. Inside a PR, each commit does one thing.
