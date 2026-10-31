@@ -15,8 +15,10 @@ EE_OBJS = \
 	src/wipeout/track.o src/wipeout/ui.o src/wipeout/weapon.o
 
 # Display output: 480i (any TV), 480p (component cables),
-# vga (VGA monitor through the PS2 Linux kit adapter). e.g. make VIDEO=vga
-VIDEO ?= 480i
+# vga (VGA monitor through the PS2 Linux kit adapter). e.g. make VIDEO=480i
+# vga is the default for development: 640x480 with square pixels, so the
+# framebuffer and screenshots match the game's 4:3 layout 1:1.
+VIDEO ?= vga
 EE_CFLAGS += -DVIDEO_$(VIDEO)
 
 EE_INCS += -Isrc -I$(GSKIT)/include

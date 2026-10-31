@@ -128,8 +128,8 @@ Read it before starting work on a stage.
 - Logging: `platform_ps2.c` makes stdout and stderr line-buffered streams that
   write to the serial port, which PCSX2 copies to emuLog.txt. Use plain `printf()`.
   (`sio_puts()` appends its own newline, so avoid it for log lines.)
-- Display output is a build option: `make VIDEO=480i|480p|vga` (default 480i).
-  `build_and_run.sh` always builds the default; for another mode, run make with
+- Display output is a build option: `make VIDEO=480i|480p|vga` (default vga: 640x480, square pixels, matching the game's layout 1:1;
+  480i is 640x448 field-rendered, scaled from 480 lines).  `build_and_run.sh` always builds the default; for another mode, run make with
   VIDEO in the container, then `build_and_run.sh --no-build`.
 - Screenshots: the user granted the Claude app Accessibility permission, so
   `build_and_run.sh --shot` (F8 to PCSX2) works; read the PNG from
