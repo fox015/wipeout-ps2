@@ -457,18 +457,13 @@ static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
 		dst = (dst == buf_a) ? buf_b : buf_a;
 	}
 
-	int textured = is_textured(texture_index);
-	gs_vertex_t gv[CLIP_MAX];
-	float sx[CLIP_MAX], sy[CLIP_MAX];
+	// Project first: the back-face test needs only screen x and y, so culled
+	// polygons skip building GS vertices.
+	float sx[CLIP_MAX], sy[CLIP_MAX], rw[CLIP_MAX];
 	for (int i = 0; i < n; i++) {
-		float rw = 1.0f / src[i].w;
-		sx[i] = shake_x + 320.0f * src[i].x * rw;
-		sy[i] = shake_y - 240.0f * src[i].y * rw;
-		float z = rw * Z_SCALE;
-		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
-		gv[i].rgbaq = rgbaq_from(src[i].color, textured, rw);
-		gv[i].uv = GS_SET_ST(float_bits(src[i].u * rw), float_bits(src[i].v * rw));
-		gv[i].xyz = xyz_from(sx[i], sy[i], iz);
+		rw[i] = 1.0f / src[i].w;
+		sx[i] = shake_x + 320.0f * src[i].x * rw[i];
+		sy[i] = shake_y - 240.0f * src[i].y * rw[i];
 	}
 
 	if (cull_backface) {
@@ -482,18 +477,24 @@ static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
 		}
 	}
 
+	int textured = is_textured(texture_index);
+	gs_vertex_t gv[CLIP_MAX];
+	for (int i = 0; i < n; i++) {
+		float z = rw[i] * Z_SCALE;
+		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
+		gv[i].rgbaq = rgbaq_from(src[i].color, textured, rw[i]);
+		gv[i].uv = GS_SET_ST(float_bits(src[i].u * rw[i]), float_bits(src[i].v * rw[i]));
+		gv[i].xyz = xyz_from(sx[i], sy[i], iz);
+	}
+
 	sync_depth_state();
 	sync_blend_state();
 	if (textured) {
 		texture_bind(texture_index);
 	}
 
-	// Fan out from vertex 0.
-	u64 prim = GS_SET_PRIM(GS_PRIM_TRIANGLE, 1, textured, 0, 1, 0, 0, 0, 0);
-	for (int i = 1; i + 1 < n; i++) {
-		gs_vertex_t tri[3] = {gv[0], gv[i], gv[i + 1]};
-		gs_draw(prim, tri, 3);
-	}
+	// One triangle fan from vertex 0: a single PRIM write for the polygon.
+	gs_draw(GS_SET_PRIM(GS_PRIM_PRIM_TRIFAN, 1, textured, 0, 1, 0, 0, 0, 0), gv, n);
 	prof.triangles += n - 2;
 }
 
