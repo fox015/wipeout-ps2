@@ -427,19 +427,28 @@ static int outcode(const clip_vertex_t *v) {
 	return code;
 }
 
+// Whether a vertex is outside any plane the clipper cuts against: the near
+// plane or the guard band. A polygon with none outside needs no clipping.
+static int needs_clip(const clip_vertex_t *v) {
+	float g = GUARD_BAND * v->w;
+	return v->z < -v->w || v->x < -g || v->x > g || v->y < -g || v->y > g;
+}
+
 // Clip, project and draw a convex polygon given in clip space.
 static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
-	int all_out = ~0;
+	int all_out = ~0, any_out = 0;
 	for (int i = 0; i < n; i++) {
 		all_out &= outcode(&poly[i]);
+		any_out |= needs_clip(&poly[i]);
 	}
 	if (all_out) {
 		return;
 	}
 
+	// Most polygons are wholly inside every plane: only clip those that aren't.
 	clip_vertex_t buf_a[CLIP_MAX], buf_b[CLIP_MAX];
 	clip_vertex_t *src = poly, *dst = buf_a;
-	for (int p = 0; p < (int)(sizeof(clip_planes) / sizeof(clip_planes[0])); p++) {
+	for (int p = 0; any_out && p < (int)(sizeof(clip_planes) / sizeof(clip_planes[0])); p++) {
 		n = clip_poly(src, n, dst, clip_planes[p]);
 		if (n < 3) {
 			return;
