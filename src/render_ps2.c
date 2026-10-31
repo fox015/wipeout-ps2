@@ -588,8 +588,13 @@ static void draw_vs(const int *order, int n, const float *w, uint16_t texture_in
 	for (int i = 0; i < n; i++) {
 		const render_vertex_t *v = &vs[order[i]];
 		clip_vertex_t c = {.x = v->x, .y = v->y, .z = v->z, .w = w[order[i]]};
-		all_out &= outcode(&c);
-		any_out |= needs_clip(&c);
+		int code = outcode(&c);
+		all_out &= code;
+		// The guard band contains the frustum: only a vertex outside the
+		// frustum can be outside it.
+		if (code) {
+			any_out |= needs_clip(&c);
+		}
 	}
 	if (all_out) {
 		prof.render += prof_cycles() - t0;
