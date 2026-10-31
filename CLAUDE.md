@@ -9,10 +9,10 @@ The plan, stage by stage, and the architecture decisions are in `ROADMAP.md`.
 Read it before starting work on a stage.
 
 ## Current state (Oct 2026)
-- Stages 0–6 are done. In PCSX2 the pad drives the game from the title screen
-  through the menus into a race, fully textured and blended. Menus run at 60fps,
-  races at about 30fps (performance is stage 10). Sound and saves are stubs.
-  Next up: stage 7.
+- Stages 0–7 are done. In PCSX2 the pad drives the game from the title screen
+  through the menus into a race, fully textured and blended, with sound effects,
+  music and tunnel reverb. Menus run at 60fps, races at 30–60fps (performance is
+  stage 10). Saves are stubs. Next up: stage 8.
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -57,7 +57,7 @@ Read it before starting work on a stage.
 - Platform files: `platform_*.c`, `render_*.c`, `sfx_*.c`, `mtx_*`. The PS2 ones are
   stubs that call `TODO()` (`todo_ps2.h`), which logs `TODO: <function>` once.
 - Dreamcast-only, not built for PS2: `vmu.c`/`vmudata.h` (→ libmc, stage 8),
-  `sndwav.c` (→ audsrv, stage 7), `asmfuncs.S`, `dcpad.bin`, `sonic.raw`.
+  `sndwav.c`, `asmfuncs.S`, `dcpad.bin`, `sonic.raw`.
   `input.c` is shared; the Dreamcast pad reading lives in `platform_dc.c`.
 - PS2 pad: `pad_ps2.c` (libpad with the BIOS's `rom0:SIO2MAN`/`rom0:PADMAN`, port 1,
   analog mode). Buttons map to the Dreamcast layout by position: Cross = A (thrust,
@@ -89,6 +89,19 @@ Read it before starting work on a stage.
   renderer uses. Boost/item pads have PS1-scale colours (128 is 1.0, as in
   wipeout-rewrite), which the GS's modulate does natively: they're drawn unhalved
   in one pass, where the Dreamcast drew them twice with blending.
+- PS2 sound (`sfx_ps2.c`, IOP modules loaded from the ELF by `iop_ps2.c`):
+  - Sound effects: `wipeout.vb` (PS1 ADPCM) goes into sound RAM once; each effect
+    is one of core 1's 24 hardware voices, driven through ps2snd (each call is an
+    RPC, about 50us). Loops patch the sample's last block to repeat.
+  - Music: a thread one priority above the game reads `wipeout/music/*.qoa` from
+    the host, decodes it (`qoa.h`, unchanged from upstream) and feeds audsrv. The
+    game's `.adpcm` paths become `.qoa`. Only that thread calls audsrv.
+  - Reverb: core 1's Hall effect, faded in by `sfx_set_reverb()`, which `race.c`
+    calls each frame (sections with more than 4 faces, as on the PS1).
+  - Gotchas: every libsd init (ps2snd's `sceSdInit()`, `audsrv_init()`) resets
+    all voices, volumes and transfers, so the order is ps2snd, audsrv, then our
+    settings. audsrv zeroes core 0's master volume on every volume change, which
+    is why effects are on core 1.
 - 16:9 is anamorphic as on the Dreamcast: layout 640x360, 16:9 projection, output
   fills all lines. Menu/HUD code checks `platform_screen_size().y == 360`.
 - Known bug: `sfx_load()` in `sfx_dc.c` clears `nodes->data` in a loop without

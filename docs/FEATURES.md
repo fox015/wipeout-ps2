@@ -30,7 +30,7 @@ PS1 features missing from the leaked PC source, brought back by a later port.
 |---|---|
 | Crowd cheers | Restored by the rewrite |
 | PS1-style speedometer | Redrawn by the rewrite |
-| Reverb in tunnels | Missing upstream. The PS2's SPU2 has hardware reverb: stage 7 |
+| Reverb in tunnels | Missing upstream. On PS2 since stage 7: the SPU2's hardware reverb, on sound effects and music, where a track section has more than 4 faces |
 | Intro video | The PS1 used STR video; the rewrite plays it as MPEG-1 (pl_mpeg). Not in this port; the PS2's IPU decodes MPEG in hardware |
 | End-of-race animations | Missing from the leaked source and upstream |
 | neGcon controller | The PS1 game supported it; the rewrite dropped the code. Planned (stage 11) |
@@ -66,6 +66,7 @@ PS1 features missing from the leaked PC source, brought back by a later port.
 |---|---|
 | 480i, 480p or VGA output | Build option (`make VIDEO=`), not a menu setting |
 | Paletted textures | Invisible; fits a race in VRAM |
+| Sound effects on hardware voices | As on the PS1: the original ADPCM samples, played by the SPU2 |
 
 ## Ours
 
@@ -74,4 +75,5 @@ Planned, not done yet (stage 11 in `ROADMAP.md`).
 | Feature | Notes |
 |---|---|
 | neGcon support | Restores a PS1 feature. The PS2's pad driver identifies the neGcon |
+| Music from the original disc | Idea: play the PS1 disc's CD audio tracks with `audsrv_play_cd()`, instead of QOA files |
 | Video options in the menu | Output mode at run time instead of a build option: 480i/576i, 480p/576p, VGA, 4:3 or 16:9. Higher VGA modes, 720p and 1080i only if VRAM allows |
