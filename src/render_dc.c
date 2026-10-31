@@ -428,6 +428,10 @@ void render_begin_translucent(void) {
 	pvr_dr_init(&dr_state);
 }
 
+bool render_box_visible(vec3_t pos, float half_size) {
+	return true;
+}
+
 void render_set_view(vec3_t pos, vec3_t angles) {
 	render_set_depth_write(true);
 	render_set_depth_test(true);

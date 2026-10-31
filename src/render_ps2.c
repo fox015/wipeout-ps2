@@ -74,6 +74,7 @@ static float shake_count = 0.0f;
 // output height and the screen shake by update_screen_xform().
 static float screen_kx, screen_bx, screen_ky, screen_by;
 static void update_screen_xform(void);
+static void update_frustum(void);
 
 // GS state as last sent, so register writes are only queued on a change.
 static int depth_test = 1;
@@ -311,6 +312,7 @@ void render_reset_proj(float farval) {
 	projection_mat.m[14] = f2;
 	vp_mat.m[10] = f1;
 	vp_mat.m[14] = f2;
+	update_frustum();
 }
 
 void render_set_resolution(render_resolution_t res) {
@@ -323,6 +325,50 @@ vec2i_t render_size(void) {
 	return screen_size;
 }
 
+// The view frustum's side and near planes in world space, as (a, b, c, d)
+// with a*x + b*y + c*z + d >= 0 inside, scaled to unit normals. They're the
+// clip-space tests (-w <= x <= w and so on) pulled back through vp * view.
+static float frustum[5][4];
+
+static void update_frustum(void) {
+	// rows of clip = vp_mat * view_mat
+	float row[4][4];
+	for (int r = 0; r < 4; r++) {
+		for (int c = 0; c < 4; c++) {
+			row[r][c] =
+				vp_mat.m[0 * 4 + r] * view_mat.m[c * 4 + 0] +
+				vp_mat.m[1 * 4 + r] * view_mat.m[c * 4 + 1] +
+				vp_mat.m[2 * 4 + r] * view_mat.m[c * 4 + 2] +
+				vp_mat.m[3 * 4 + r] * view_mat.m[c * 4 + 3];
+		}
+	}
+	// w + x (left), w - x (right), w + y (bottom), w - y (top), w + z (near)
+	static const int axis[5] = {0, 0, 1, 1, 2};
+	static const float sign[5] = {1, -1, 1, -1, 1};
+	for (int p = 0; p < 5; p++) {
+		float *f = frustum[p];
+		for (int c = 0; c < 4; c++) {
+			f[c] = row[3][c] + sign[p] * row[axis[p]][c];
+		}
+		float len = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+		for (int c = 0; c < 4; c++) {
+			f[c] /= len;
+		}
+	}
+}
+
+bool render_box_visible(vec3_t pos, float half_size) {
+	// The box fits in a sphere of half_size * sqrt(3), whatever its rotation.
+	float radius = half_size * 1.7321f;
+	for (int p = 0; p < 5; p++) {
+		const float *f = frustum[p];
+		if (f[0] * pos.x + f[1] * pos.y + f[2] * pos.z + f[3] < -radius) {
+			return false;
+		}
+	}
+	return true;
+}
+
 void render_set_view(vec3_t pos, vec3_t angles) {
 	render_set_depth_write(true);
 	render_set_depth_test(true);
@@ -332,6 +378,7 @@ void render_set_view(vec3_t pos, vec3_t angles) {
 	mat4_set_roll_pitch_yaw(&view_mat, vec3(angles.x, -angles.y + F_PI, angles.z + F_PI));
 	mat4_translate(&view_mat, vec3_inv(pos));
 	mat4_set_yaw_pitch_roll(&sprite_mat, vec3(-angles.x, angles.y - F_PI, 0));
+	update_frustum();
 }
 
 void render_set_view_2d(void) {

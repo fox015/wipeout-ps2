@@ -76,6 +76,10 @@ void render_begin_translucent(void);
 
 void render_set_view(vec3_t pos, vec3_t angles);
 void render_set_view_2d(void);
+// Whether anything in a box of half_size around pos (world space, in any
+// orientation) can be in view, for skipping whole objects before they're
+// drawn. Platforms without the test return true.
+bool render_box_visible(vec3_t pos, float half_size);
 void render_set_model_mat(mat4_t *m);
 void render_set_model_ident(void);
 void render_set_depth_write(bool enabled);
