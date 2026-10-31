@@ -109,6 +109,7 @@ int main(int argc, char *argv[]) {
 	temp_path = mem_bump(max(strlen(path_assets), strlen(path_userdata)) + 64);
 
 	pad_init();
+	iop_load_memcard_modules();
 	iop_load_sound_modules();
 	system_init();
 

@@ -6,4 +6,8 @@
 // music). They're built into the ELF. Returns 0 on success.
 int iop_load_sound_modules(void);
 
+// Load the BIOS's memory card modules (MCMAN, MCSERV; they need the BIOS's
+// SIO2MAN, which pad_init() loads) and start libmc. Returns 0 on success.
+int iop_load_memcard_modules(void);
+
 #endif

@@ -27,7 +27,7 @@ VIDEO ?= vga
 EE_CFLAGS += -DVIDEO_$(VIDEO)
 
 EE_INCS += -Isrc -I$(GSKIT)/include
-EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -laudsrv -lps2snd -lpatches -ldebug -lm
+EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -lmc -laudsrv -lps2snd -lpatches -ldebug -lm
 
 all: $(EE_BIN)
 

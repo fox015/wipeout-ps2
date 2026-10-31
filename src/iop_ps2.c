@@ -3,6 +3,7 @@
 #include <sifrpc.h>
 #include <loadfile.h>
 #include <sbv_patches.h>
+#include <libmc.h>
 
 #include "iop_ps2.h"
 
@@ -35,5 +36,19 @@ int iop_load_sound_modules(void) {
 		load("ps2snd", ps2snd_irx, size_ps2snd_irx) < 0) {
 		return -1;
 	}
+	return 0;
+}
+
+int iop_load_memcard_modules(void) {
+	if (SifLoadModule("rom0:MCMAN", 0, NULL) < 0 ||
+		SifLoadModule("rom0:MCSERV", 0, NULL) < 0) {
+		printf("iop: could not load MCMAN/MCSERV\n");
+		return -1;
+	}
+	if (mcInit(MC_TYPE_MC) < 0) {
+		printf("iop: mcInit failed\n");
+		return -1;
+	}
+	printf("iop: loaded MCMAN, MCSERV\n");
 	return 0;
 }
