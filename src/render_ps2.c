@@ -73,6 +73,7 @@ static int depth_write = 1;
 static int cull_backface = 1;
 static u64 sent_test = ~0ull;
 static u64 sent_zbuf = ~0ull;
+static u64 sent_alpha = ~0ull;
 
 static void textures_vram_init(void);
 static int is_textured(uint16_t texture_index);
@@ -177,6 +178,34 @@ static void sync_depth_state(void) {
 	}
 }
 
+// The GS blends as ((A - B) * C >> 7) + D, with A, B and D each the source
+// colour (0), the destination colour (1) or zero (2), and C the source alpha
+// (0), destination alpha (1) or FIX (2). 0x80 is 1.0.
+static u64 blend_alpha(render_blend_mode_t mode) {
+	switch (mode) {
+	case RENDER_BLEND_LIGHTER:     // src * alpha + dst
+		return GS_SET_ALPHA(0, 2, 0, 1, 0);
+	case RENDER_BLEND_STUPID:      // src (opaque)
+		return GS_SET_ALPHA(0, 2, 2, 2, 0x80);
+	case RENDER_BLEND_SPECIAL2:    // src + dst
+		return GS_SET_ALPHA(0, 2, 2, 1, 0x80);
+	case RENDER_BLEND_SPECIAL:     // src * dst + dst and src + dst * (1 - alpha)
+	case RENDER_BLEND_BRIGHTBRIGHT: // aren't possible on the GS. Only the
+		                            // Dreamcast renderer uses them.
+	case RENDER_BLEND_NORMAL:      // src * alpha + dst * (1 - alpha)
+	default:
+		return GS_SET_ALPHA(0, 1, 0, 1, 0);
+	}
+}
+
+static void sync_blend_state(void) {
+	u64 alpha = blend_alpha(render_state.blend_mode);
+	if (alpha != sent_alpha) {
+		gs_set_reg(GS_REG_ALPHA, alpha);
+		sent_alpha = alpha;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Frames
 
@@ -186,9 +215,8 @@ void render_frame_prepare(void) {
 	gsKit_queue_exec(gs);
 	gsKit_queue_reset(gs->Os_Queue);
 
-	gs_set_reg(GS_REG_ALPHA, GS_SET_ALPHA(0, 1, 0, 1, 0));
 	gs_set_reg(GS_REG_COLCLAMP, GS_SET_COLCLAMP(1));
-	sent_test = sent_zbuf = ~0ull;
+	sent_test = sent_zbuf = sent_alpha = ~0ull;
 	textures_frame_start();
 	render_set_depth_write(true);
 	render_set_depth_test(true);
@@ -435,6 +463,7 @@ static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
 	}
 
 	sync_depth_state();
+	sync_blend_state();
 	if (textured) {
 		texture_bind(texture_index);
 	}
@@ -545,6 +574,7 @@ void render_push_2d_tile(vec2i_t pos, vec2i_t uv_offset, vec2i_t uv_size, vec2i_
 	depth_test = 0;
 	depth_write = 0;
 	sync_depth_state();
+	sync_blend_state();
 
 	int textured = is_textured(texture_index);
 	if (textured) {
