@@ -7,7 +7,7 @@ EE_BIN = wipeout.elf
 EE_OBJS = \
 	src/alloc.o src/input.o src/mem.o src/system.o src/types.o src/utils.o \
 	src/platform_ps2.o src/render_ps2.o src/sfx_ps2.o src/mtx_ps2.o src/pad_ps2.o src/gs_ps2.o \
-	src/iop_ps2.o $(IRX_OBJS) \
+	src/iop_ps2.o src/memcard_ps2.o $(IRX_OBJS) \
 	src/wipeout/camera.o src/wipeout/droid.o src/wipeout/game.o src/wipeout/hud.o \
 	src/wipeout/image.o src/wipeout/ingame_menus.o src/wipeout/intro.o \
 	src/wipeout/main_menu.o src/wipeout/menu.o src/wipeout/object.o \
@@ -27,7 +27,7 @@ VIDEO ?= vga
 EE_CFLAGS += -DVIDEO_$(VIDEO)
 
 EE_INCS += -Isrc -I$(GSKIT)/include
-EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -laudsrv -lps2snd -lpatches -ldebug -lm
+EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -lmc -laudsrv -lps2snd -lpatches -ldebug -lm
 
 all: $(EE_BIN)
 

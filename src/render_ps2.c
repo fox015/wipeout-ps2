@@ -16,6 +16,7 @@
 #include <gs_gp.h>
 
 #include "render.h"
+#include "render_ps2.h"
 #include "mtx.h"
 #include "system.h"
 #include "utils.h"
@@ -930,6 +931,29 @@ static void texture_palettize(texture_t *t, uint16_t *colors) {
 			color_index[colors[i]] = 0;
 		}
 	}
+}
+
+uint16_t render_ps2_texel(uint16_t texture_index, int x, int y) {
+	if (texture_index >= textures_len) {
+		return 0;
+	}
+	texture_t *t = &textures[texture_index];
+	if (!t->pixels || x < 0 || y < 0 || x >= t->size.x || y >= t->size.y) {
+		return 0;
+	}
+	int i = y * t->padsize.x + x;
+	if (t->psm == GS_PSM_CT16) {
+		return ((uint16_t *)t->pixels)[i];
+	}
+	int index;
+	if (t->psm == GS_PSM_T4) {
+		uint8_t pair = ((uint8_t *)t->pixels)[i / 2];
+		index = (i & 1) ? pair >> 4 : pair & 0x0f;
+		return t->clut[index];
+	}
+	index = ((uint8_t *)t->pixels)[i];
+	// The 256-colour CLUT has index bits 3 and 4 swapped (CSM1).
+	return t->clut[(index & ~0x18) | ((index & 0x08) << 1) | ((index & 0x10) >> 1)];
 }
 
 uint16_t render_texture_create(uint32_t width, uint32_t height, uint16_t *pixels) {
