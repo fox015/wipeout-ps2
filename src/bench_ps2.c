@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "bench_ps2.h"
+#include "system.h"
 #include "wipeout/game.h"
 #include "wipeout/camera.h"
 #include "wipeout/ship_ai.h"
@@ -157,6 +158,14 @@ void bench_update(void) {
 		memset(sections, 0, sizeof(sections));
 		phase = PHASE_LAP;
 	}
+#ifdef BENCH_FREEZE
+	else if (phase == PHASE_LAP && stats.frames == BENCH_FREEZE) {
+		// The game keeps drawing, but nothing moves.
+		system_time_scale_set(0);
+		printf("bench: frozen at lap frame %d\n", BENCH_FREEZE);
+		phase = PHASE_DONE;
+	}
+#endif
 	else if (phase == PHASE_LAP && (ship->lap >= 1 || stats.frames >= TIMEOUT_FRAMES)) {
 		log_stats(ship->lap >= 1 ? "lap" : "lap TIMED OUT");
 		log_sections();

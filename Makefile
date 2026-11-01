@@ -45,9 +45,15 @@ EE_CFLAGS += -DBENCH -DBENCH_ALL
 else ifneq ($(BENCH),)
 $(error BENCH must be 1 or all)
 endif
+# BENCH_FREEZE=N stops the race at the lap's frame N (it keeps drawing it), to
+# take a screenshot of exactly the same frame from two builds.
+BENCH_FREEZE ?=
+ifneq ($(BENCH_FREEZE),)
+EE_CFLAGS += -DBENCH_FREEZE=$(BENCH_FREEZE)
+endif
 
 # Rebuild what VIDEO and BENCH change when they do.
-CONFIG_STAMP = src/.config-$(VIDEO)-bench$(BENCH)
+CONFIG_STAMP = src/.config-$(VIDEO)-bench$(BENCH)$(BENCH_FREEZE)
 $(CONFIG_STAMP):
 	rm -f src/.config-* src/.video-*
 	touch $@

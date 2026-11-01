@@ -10,7 +10,8 @@
 // the camera behind it, weapons off, a fixed random seed and a fixed 1/60s
 // game tick, so every run plays out the same however long frames take. Each
 // track logs a "bench:" line for its intro and one for its first lap, then
-// "bench: done" after the last.
+// "bench: done" after the last. BENCH_FREEZE=N (with BENCH=1) stops the race
+// at the lap's frame N instead, for screenshots that compare two builds.
 
 #ifdef BENCH
 void bench_start(void);
