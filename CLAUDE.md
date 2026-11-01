@@ -216,11 +216,24 @@ Read it before starting work on a stage.
 - `~/Development/ps2/playstation2-linux.com.7z`: 1.7 GB archive of the PS2 Linux
   community site. Not yet inspected (needs 7z).
 
-## References
-- glampert/quake2-ps2: a modern, complete PS2SDK-only port. A good model for the
-  renderer, input, audio and memory card code.
-- VU1 renderers online (read, don't copy): ps2dev/ps2gl (the maintained copy of
-  the local ps2gl, with ps2dev/ps2stuff), h4570/tyra (a PS2 engine rendering
-  through VU1, with VU1 clipping), ps2dev/openvcl (VCL's open successor).
-  PCSX2's source shows how VU timing is emulated.
-- jnmartin84/wipeout-dc commit history: shows how the code was adapted to a weak GPU.
+## References, ranked by quality
+Prefer higher tiers, above all for VU microcode and other assembly. Lower tiers
+are for ideas only, checked against a higher one before anything relies on them.
+Local material (paths above) is read for ideas, never copied.
+1. **Sony's own engineers.** The hardware manuals; ps2gl and ps2stuff (SCEA,
+   open-sourced; maintained as ps2dev/ps2gl and ps2dev/ps2stuff); VCL (SCEA);
+   Colin Hughes' GDC 2002 "PlayStation 2 Clipping" and George Bain's AGDC 2002
+   "PS2 Programming Optimisations" (both SCEE); the VU contest harness (SCEE)
+   and the SCEA demos in `previous_demos` (`invite`, `slow_motion`, `tree`).
+2. **Proven open source, widely used.** ps2sdk and gsKit (we build on them);
+   PCSX2's source (how the hardware behaves, and how VU timing is emulated);
+   ps2tek and psx-spx; ps2dev/openvcl (VCL's open successor);
+   glampert/quake2-ps2 (a complete PS2SDK-only port: renderer, input, audio,
+   memory card; not VU-heavy); jnmartin84/wipeout-dc's history (how this code
+   was adapted to a weak GPU).
+3. **Professional but one-off.** `marionette` in `previous_demos` (by a
+   Monolith developer).
+4. **Hobbyist.** h4570/tyra (an engine rendering through VU1, with VU1
+   clipping); blog posts; the 2003 contest's amateur entries and other
+   contest entries such as `peewee` (demoscene); the user's 2004
+   `3dmod` experiments; anything linked from awesome-lists.
