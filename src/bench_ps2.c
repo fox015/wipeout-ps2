@@ -13,11 +13,11 @@
 #include "wipeout/track.h"
 
 #ifndef BENCH_ALL
-#define FIRST_CIRCUT CIRCUT_ALTIMA_VII // track02
-#define LAST_CIRCUT  CIRCUT_ALTIMA_VII
+#define FIRST_CIRCUIT CIRCUT_ALTIMA_VII // track02
+#define LAST_CIRCUIT  CIRCUT_ALTIMA_VII
 #else
-#define FIRST_CIRCUT 0
-#define LAST_CIRCUT  (NUM_CIRCUTS - 1)
+#define FIRST_CIRCUIT 0
+#define LAST_CIRCUIT  (NUM_CIRCUTS - 1)
 #endif
 
 #define SEED 1995
@@ -40,15 +40,15 @@ typedef struct {
 } stats_t;
 
 static phase_t phase;
-static int circut;
+static int circuit;
 static stats_t stats;
 static struct {
 	uint64_t work;
 	uint32_t frames;
 } sections[MAX_SECTIONS];
 
-static void start_circut(int c) {
-	circut = c;
+static void start_circuit(int c) {
+	circuit = c;
 	srand(SEED);
 	g.circut = c;
 	g.race_class = RACE_CLASS_VENOM;
@@ -61,14 +61,14 @@ static void start_circut(int c) {
 
 void bench_start(void) {
 	printf("bench: one lap of %s, Venom class, AI driving, weapons off, fixed 1/60s tick\n",
-		FIRST_CIRCUT == LAST_CIRCUT ? "track02" : "every circuit");
-	start_circut(FIRST_CIRCUT);
+		FIRST_CIRCUIT == LAST_CIRCUIT ? "track02" : "every circuit");
+	start_circuit(FIRST_CIRCUIT);
 }
 
 // Its folder, such as "track02", to match the load: lines.
 static const char *track_name(void) {
 	static char name[16];
-	const char *path = def.circuts[circut].settings[RACE_CLASS_VENOM].path;
+	const char *path = def.circuts[circuit].settings[RACE_CLASS_VENOM].path;
 	const char *p = strstr(path, "track");
 	snprintf(name, sizeof(name), "%.7s", p ? p : path);
 	return name;
@@ -160,8 +160,8 @@ void bench_update(void) {
 	else if (phase == PHASE_LAP && (ship->lap >= 1 || stats.frames >= TIMEOUT_FRAMES)) {
 		log_stats(ship->lap >= 1 ? "lap" : "lap TIMED OUT");
 		log_sections();
-		if (circut < LAST_CIRCUT) {
-			start_circut(circut + 1);
+		if (circuit < LAST_CIRCUIT) {
+			start_circuit(circuit + 1);
 		}
 		else {
 			printf("bench: done\n");
