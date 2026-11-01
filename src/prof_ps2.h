@@ -15,6 +15,11 @@ static inline uint32_t prof_cycles(void) {
 	return c;
 }
 
+// Depth bands for prof.depth, in the game's units: the Dreamcast port's draw
+// distances are 64000, 76000 and 96000, wipeout-rewrite's 64000 (faded out
+// from 48000). The last band is everything beyond.
+#define PROF_DEPTH_BANDS 7
+
 typedef struct {
 	uint32_t dma_wait;  // cycles waiting for GIF DMA inside the frame
 	uint32_t qwords;    // sent to the GS
@@ -25,7 +30,10 @@ typedef struct {
 	uint32_t verts;     // vertices transformed
 	uint32_t upload;    // cycles uploading textures to VRAM
 	uint32_t uploads;   // textures uploaded
+	uint32_t depth[PROF_DEPTH_BANDS]; // 3D polygons drawn, by nearest vertex's depth
 } prof_counters_t;
+
+extern const float prof_depth_band[PROF_DEPTH_BANDS - 1];
 
 extern prof_counters_t prof;
 

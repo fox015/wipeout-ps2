@@ -600,6 +600,19 @@ static void draw_vs(const int *order, int n, const float *w, uint16_t texture_in
 		prof.render += prof_cycles() - t0;
 		return;
 	}
+	// Sky and sprites draw without depth writes and aren't scenery at a
+	// distance, so they stay out of the depth bands.
+	if (depth_write) {
+		float near_w = w[order[0]];
+		for (int i = 1; i < n; i++) {
+			near_w = fminf(near_w, w[order[i]]);
+		}
+		int band = 0;
+		while (band < PROF_DEPTH_BANDS - 1 && near_w >= prof_depth_band[band]) {
+			band++;
+		}
+		prof.depth[band]++;
+	}
 
 	if (!any_out) {
 		if (order == quad_order) {
