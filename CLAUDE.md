@@ -12,10 +12,11 @@ Read it before starting work on a stage.
 - Stages 0–8 are done. In PCSX2 the pad drives the game from the title screen
   through the menus into a race, fully textured and blended, with sound effects,
   music and tunnel reverb, and settings and records save to the memory card.
-  Stage 10.1 (profiling and cutting the renderer's work) is done: menus run at
-  60fps; in PCSX2 a lap of any circuit averages 95–121fps uncapped, with
-  0.6–4.8% of frames over budget (performance is stages 10–12).
-  Next up: stage 10.2 (leaner GS packets), then stage 9 (real hardware).
+  Stages 10.1 (profiling and cutting the renderer's work) and 10.2 (REGLIST
+  GS packets) are done: menus run at 60fps; in PCSX2 a lap of any circuit
+  averages 93–119fps uncapped, with 0.9–5.4% of frames over budget
+  (performance is stages 10–12).
+  Next up: stage 10.3 (draw distance and fade), then stage 9 (real hardware).
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -76,8 +77,10 @@ Read it before starting work on a stage.
   The PS2 version maps both 16:9 values to 640x360.
 - PS2 renderer (`render_ps2.c`): gsKit only sets up the display, clears (at the
   start of each frame) and flips. Everything else goes through `gs_ps2.c`, our
-  GIF packet builder (A+D register writes, DMA'd when 64 KB fills or at frame
+  GIF packet builder (register writes as A+D, each polygon as one REGLIST tag:
+  PRIM then 24 bytes a textured vertex; DMA'd when 64 KB fills or at frame
   end), because gsKit's primitives can't control depth writes (ZBUF.ZMSK).
+  `draw_projected()` writes vertices straight into the packet (`gs_prim()`).
   3D follows `render_dc.c`'s maths, with a general polygon clipper (near plane +
   GS guard band) in place of its hand-written quad cases. Depth is 1/w in a
   16-bit Z-buffer, GEQUAL.
@@ -183,14 +186,20 @@ Read it before starting work on a stage.
   final flush, vsync), polygon and vertex counts, KB sent to the GS, uncapped
   fps and frames over budget; `depth:` gives polygons by depth band and the
   camera's track section. In PCSX2 the counter is the emulator's estimate:
-  compare runs, don't quote them as hardware figures.
+  compare runs, don't quote them as hardware figures. Render time includes
+  `draw_vs()`'s own entry and exit only since stage 10.2 (it's timed from its
+  callers); a change to what gcc inlines there shows up as render time now.
 - Benchmarks: `tools/bench.sh` (one lap of track02, about 2 minutes) or
   `tools/bench.sh all` (one lap of every circuit). It builds with `make BENCH=1`
   or `BENCH=all`: the game races by itself with the AI driving, the camera
   behind the ship, no weapons, a fixed seed and a fixed 1/60s tick, so every
   run is the same race (`src/bench_ps2.h`). It prints `bench:` lines for each
-  intro and lap, then rebuilds the normal ELF. Nobody needs to touch PCSX2.
-  Performance commits and PRs quote it before and after.
+  intro and lap (with KB sent to the GS), then rebuilds the normal ELF. Nobody
+  needs to touch PCSX2. Performance commits and PRs quote it before and after.
+  `tools/bench.sh shot N` freezes track02's lap at frame N (`make BENCH=1
+  BENCH_FREEZE=N`) and takes a screenshot: the same frame in any build, to
+  check a change draws the same. Compare as BMPs (`sips -s format bmp`); the
+  same build differs from itself by about 2–3k bytes in the billboards.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
