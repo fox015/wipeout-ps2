@@ -538,10 +538,13 @@ static void draw_projected(int n, const float *pos, int pos_stride, const float 
 	}
 
 	if (cull_backface) {
+		// Twice the signed area, as a fan of triangles from vertex 0. Relative
+		// to vertex 0, not to the GS's origin: GS coordinates are around
+		// 32000, so products of them are around 10^9, where a float's
+		// rounding is larger than a small polygon's area.
 		float area = 0;
-		for (int i = 0; i < n; i++) {
-			int j = (i + 1) % n;
-			area += sx[i] * sy[j] - sx[j] * sy[i];
+		for (int i = 1; i < n - 1; i++) {
+			area += (sx[i] - sx[0]) * (sy[i + 1] - sy[0]) - (sx[i + 1] - sx[0]) * (sy[i] - sy[0]);
 		}
 		if (area * BACKFACE_SIGN > 0) {
 			return;
