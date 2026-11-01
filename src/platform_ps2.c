@@ -14,6 +14,7 @@
 #include "todo_ps2.h"
 #include "pad_ps2.h"
 #include "iop_ps2.h"
+#include "bench_ps2.h"
 
 char *path_assets = "host:";
 char *path_userdata = "host:wipeout/";
@@ -107,16 +108,27 @@ int main(int argc, char *argv[]) {
 	// game_init() seeds rand() from platform_now(), which counts from its own
 	// first call: always 0 here, so every boot got the same weapon pickups.
 	// Seed again from the real-time clock.
+	// Benchmark builds seed it themselves, the same every run.
+#ifndef BENCH
 	time_t now = time(NULL);
 	srand((unsigned)now);
 	printf("rand: seeded from the clock (%u)\n", (unsigned)now);
+#else
+	bench_start();
+#endif
 
 	// No display yet (stage 3), so log a frame count once a second instead.
 	uint32_t frames = 0;
 	float next_report = platform_now() + 1.0f;
 	while (!wants_to_exit) {
+#ifndef BENCH
 		pad_update();
 		system_update();
+#else
+		// No pad: nothing should steer, pause or change the view.
+		system_update();
+		bench_update();
+#endif
 		frames++;
 		float now = platform_now();
 		if (now >= next_report) {

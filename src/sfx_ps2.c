@@ -442,7 +442,7 @@ static uint8_t music_read_buf[MUSIC_READ_SIZE] __attribute__((aligned(64)));
 static short music_pcm[QOA_FRAME_LEN * 2] __attribute__((aligned(64)));
 static uint8_t music_thread_stack[16 * 1024] __attribute__((aligned(16)));
 
-static bool music_track_recent(uint32_t index) {
+static __attribute__((unused)) bool music_track_recent(uint32_t index) {
 	for (int i = 0; i < 5; i++) {
 		if (last_five_tracks[i] == index) {
 			return true;
@@ -458,9 +458,15 @@ static void music_pick_next(void) {
 	}
 	if (music_mode == SFX_MUSIC_RANDOM) {
 		uint32_t index;
+#ifndef BENCH
 		do {
 			index = rand_int(0, len(def.music));
 		} while (music_track_recent(index));
+#else
+		// This thread runs on real time: a rand() here would shift the
+		// benchmark race's random numbers.
+		index = (music_track_index + 1) % len(def.music);
+#endif
 		for (int i = 1; i < 5; i++) {
 			last_five_tracks[i - 1] = last_five_tracks[i];
 		}

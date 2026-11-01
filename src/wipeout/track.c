@@ -608,7 +608,8 @@ void track_draw(camera_t *camera) {
 		float dist_sq = vec3_len_sq(diff);
 
 		if (cam_dot < s->radius &&
-			dist_sq < drawdist
+			dist_sq < drawdist &&
+			render_box_visible(s->center, s->radius)
 		) {
 			track_draw_section(s);
 		}

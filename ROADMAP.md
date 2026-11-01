@@ -27,8 +27,10 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
-| 10 | Performance | Holds 60fps on real hardware in a full race |
-| 11 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
+| 10 | Performance: the C path (10.1 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.4 |
+| 11 | Performance: VU0 macro mode | Vertex maths on VU0, measured on real hardware |
+| 12 | Performance: VU1 renderer | Transform, clip and packets on VU1 (PATH1); 60fps with headroom on real hardware in a full race |
+| 13 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
 
 ### 0. Build tooling
 - Devcontainer on a pinned `ps2dev/ps2dev` tag, with the repo mounted at the same
@@ -80,7 +82,7 @@ sprites and screen shake; 16:9 anamorphic works. Races run at about 30fps.
 Left for later: boost/item pads, which the Dreamcast draws twice with special
 blending (stage 6), and performance (stage 10). The renderer builds its own GIF
 packets, so drawing is already batched per 64 KB; the per-matrix batching for VU1
-is part of stage 10.
+is part of stage 12.
 - Anamorphic 16:9 (moved from stage 3): same framebuffer, 16:9 projection, HUD/2D
   aspect correction. Replace the Dreamcast-only letterbox mode and fix the
   out-of-bounds bug in `render_res_to_size()`.
@@ -140,18 +142,64 @@ load at boot; a setting changed in the menus survived a reboot.
   a disc image the user builds, or `host:`.
 - Output on the SDM-X53 via VGA.
 
-### 10. Performance
-- Profile first. A C + VU0 macro-mode CPU path may already reach 60fps.
-- VU1 transform/clip microcode if needed. Reference: ps2gl's `vu1/` renderers.
-- Texture loading: `render_texture_create()` finds each texture's colours to store
-  it paletted (stage 6), work that `image.c` throws away when it expands the PS1's
-  indices to 16-bit. Measure load times; if it matters, a paletted create call fed
-  from `image.c` (or a precomputed table) skips it.
-- Sound: each voice parameter is one RPC to the IOP (about 50us); a race makes
-  750–860 a second, 4% of the EE. ps2snd's `sceSdProcBatch` is a stub on the EE,
-  so batching them needs our own IOP module or a patched ps2snd.
+### 10. Performance: the C path (PATH3)
+Every drawing packet is built by the EE in C and DMA'd from main RAM straight to
+the GIF: PATH3 (see "How data reaches the GS" below). Each sub-stage is its own
+branch, PR and tag (`stage-10.1` ...). Its PR gives before/after ms per frame
+from the benchmarks, measured in PCSX2. After stage 9, each tag is measured again
+on hardware, for true figures.
+- **10.1 Profile and cut the work.** A frame profiler on the EE's cycle counter
+  (with uncapped fps, frames over budget and polygons by depth). Frustum culling
+  of track sections and scenery; a fast path that skips the clipper for polygons
+  inside the guard band; drawing straight from `vs[]`; cached GS state;
+  `-O3 -ffast-math` on the renderer. A benchmark build that races one lap
+  by itself, the same race every run (`tools/bench.sh`).
+  Result in PCSX2 on track02, against stage 8 with the same benchmark: the
+  intro's work per frame went from 38.8 to 13.1 ms (26 to 76fps uncapped),
+  the lap's from 22.6 to 8.2 ms (44 to 121fps uncapped), and frames over
+  budget in the lap from 71.5% to 1.0%. Across all seven circuits a lap now
+  averages 95–121fps uncapped, with 0.6–4.8% of frames over budget; the
+  heaviest intro is track08's (16.2 ms, 46% of frames over).
+- **10.2 Leaner GS packets.** REGLIST GIF tags instead of A+D: 24 bytes per
+  textured vertex instead of 48, half of which are register numbers. Written
+  straight into the packet, without the intermediate `gs_vertex_t` copy.
+- **10.3 Draw distance and fade.** wipeout-rewrite draws to 64000 and fades
+  vertex alpha from 48000; the Dreamcast port cuts off hard at up to 96000 per
+  section. Restore the fade and shorter distances, keeping longer ones only where
+  they're worth it. It changes the look, so the PR shows screenshots of the
+  worst sections (found with the `depth:` log).
+- **10.4 Game logic and loading.** Profile the game's own work (about 4 ms a
+  frame in the track02 intro), plus:
+  - Texture loading: `render_texture_create()` finds each texture's colours to
+    store it paletted (stage 6), work that `image.c` throws away when it expands
+    the PS1's indices to 16-bit. Measure load times; if it matters, a paletted
+    create call fed from `image.c` (or a precomputed table) skips it.
+  - Sound: each voice parameter is one RPC to the IOP (about 50us); a race makes
+    750–860 a second, 4% of the EE. ps2snd's `sceSdProcBatch` is a stub on the
+    EE, so batching them needs our own IOP module or a patched ps2snd.
 
-### 11. Our enhancements
+### 11. Performance: VU0 macro mode
+After stage 9, so its figures come from hardware: PCSX2 times VU0 instructions,
+FPU latencies and cache misses only roughly, and this stage's gain is mostly in
+exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
+- Vertex transform (`vmulax`/`vmadda`... four instructions for a 4×4 matrix),
+  outcodes with `vclip`, projection with `vdiv`. In `mtx_ps2.c` and the outcode
+  test in `render_ps2.c`.
+- VU0 loads 16-byte aligned vectors. `render_vertex_t`'s position isn't one, so
+  track quads need their positions copied first; models' `vec4_t` are fine.
+
+### 12. Performance: VU1 renderer (PATH1)
+- VU1 microcode transforms, clips and builds GS packets itself, and kicks them to
+  the GIF with `XGKICK` (PATH1), in parallel with the EE. The EE sends a matrix
+  and its vertices per batch through VIF1. Textures keep going over PATH3.
+- Batches end at matrix, texture and blend changes (see the architecture
+  decisions), so the rewrite stays inside `render_ps2.c`.
+- References (read, never copied): ps2gl's `vu1/` renderers, including clipping
+  and culling; the VU coding contest demos (harness by SCEA/SCEE staff, entries
+  from SCEA's contests); VCL or openvcl to schedule the microcode.
+- Done when: a full race holds 60fps on real hardware with headroom to spare.
+
+### 13. Our enhancements
 - **neGcon.** The original PS1 wipEout supported Namco's twist controller, and the
   PS2's BIOS pad driver identifies it (libpad's `PAD_TYPE_NEJICON`). Map the twist
   to steering and the analog I, II and L buttons to thrust, fire and airbrake, and
@@ -192,12 +240,22 @@ so the VU1 rewrite stays inside `render_ps2.c`.
 
 ### SH4 code in game logic becomes C
 The SH4 matrix assembly and `noxform` transforms become plain C first. VU0
-macro-mode only where profiling shows it's needed.
+macro mode comes in stage 11, measured on hardware.
+
+### How data reaches the GS: the GIF's three paths
+The GS only takes data through the GIF, which has three inputs (Sony's EE
+overview names them; when two are busy, PATH1 wins, then PATH2, then PATH3):
+- **PATH1**: VU1 sends packets from its own memory with `XGKICK`. Stage 12.
+- **PATH2**: VIF1 passes data straight to the GIF (`DIRECT`/`DIRECTHL`),
+  without VU1's microprogram.
+- **PATH3**: DMA channel 2 sends from main RAM to the GIF. Everything until
+  stage 12: `gs_ps2.c`'s packets and texture uploads.
+Commits and PRs that change how data reaches the GS name the path.
 
 ## Open questions
 - Full-height or half-height rendering for 480i. Full-height (640x448, the GS's
   FIELD mode, FFMD=0) is what gsKit does by default and what we use; half-height
   (640x224 per field, FRAME mode) halves VRAM and fill rate but is softer.
 - Whether 800×600 VGA with 16-bit framebuffers is worth the fill rate and VRAM
-  (stage 11).
+  (stage 13).
 - How game data ships to a real console (stage 9).

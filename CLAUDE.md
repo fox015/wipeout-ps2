@@ -12,8 +12,10 @@ Read it before starting work on a stage.
 - Stages 0–8 are done. In PCSX2 the pad drives the game from the title screen
   through the menus into a race, fully textured and blended, with sound effects,
   music and tunnel reverb, and settings and records save to the memory card.
-  Menus run at 60fps, races at 30–60fps (performance is stage 10).
-  Next up: stage 9 (real hardware).
+  Stage 10.1 (profiling and cutting the renderer's work) is done: menus run at
+  60fps; in PCSX2 a lap of any circuit averages 95–121fps uncapped, with
+  0.6–4.8% of frames over budget (performance is stages 10–12).
+  Next up: stage 10.2 (leaner GS packets), then stage 9 (real hardware).
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -79,6 +81,12 @@ Read it before starting work on a stage.
   3D follows `render_dc.c`'s maths, with a general polygon clipper (near plane +
   GS guard band) in place of its hand-written quad cases. Depth is 1/w in a
   16-bit Z-buffer, GEQUAL.
+  Since stage 10.1: track sections and scenery outside the view frustum are
+  skipped (`render_box_visible()`, called from `track.c` and `scene.c`); a
+  polygon inside the guard band is drawn straight from `vs[]` without the
+  clipper; GS state is sent only when it changes; the renderer, `mtx_ps2.c` and
+  `gs_ps2.c` build with `-O3 -ffast-math`. All drawing goes over PATH3 (the EE
+  builds packets, DMA channel 2 sends them to the GIF; see ROADMAP.md).
 - PS2 textures: every texture stays in RAM, padded to powers of two as on the
   Dreamcast (game code divides UVs by `render_texture_padsize()`). The game hands
   over 16-bit colours, but nearly all textures have 16 or 256 colours at most, so
@@ -170,6 +178,19 @@ Read it before starting work on a stage.
   Pad1 keyboard bindings, listed in the script), `tools/pcsx2_input.sh shot` takes a
   screenshot and prints its path. From the title, 5 Cross presses start a race
   (track02).
+- Profiling: `prof_ps2.c` reads the EE's cycle counter (COP0 Count) and logs
+  once a second. `prof:` gives ms per frame (work, render, transform, DMA wait,
+  final flush, vsync), polygon and vertex counts, KB sent to the GS, uncapped
+  fps and frames over budget; `depth:` gives polygons by depth band and the
+  camera's track section. In PCSX2 the counter is the emulator's estimate:
+  compare runs, don't quote them as hardware figures.
+- Benchmarks: `tools/bench.sh` (one lap of track02, about 2 minutes) or
+  `tools/bench.sh all` (one lap of every circuit). It builds with `make BENCH=1`
+  or `BENCH=all`: the game races by itself with the AI driving, the camera
+  behind the ship, no weapons, a fixed seed and a fixed 1/60s tick, so every
+  run is the same race (`src/bench_ps2.h`). It prints `bench:` lines for each
+  intro and lap, then rebuilds the normal ELF. Nobody needs to touch PCSX2.
+  Performance commits and PRs quote it before and after.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
@@ -200,19 +221,40 @@ Read it before starting work on a stage.
 ## Other local reference material (read for ideas, never copy into the repo)
 - `~/misc/dell linux backup/home/fox/ps2linux/ps2backup/`:
   - `ps2gl/vu1/`: Sony's (SCEA) open-source GL layer, with production VU1 renderers
-    including clipping and culling (`clip_cull.i`). Best reference for stage 10.
-  - `vu_coding_contest_2003_*`: VU1 demos. The harness and macros are by SCEA/SCEE
-    staff, `previous_demos` has entries from SCEA's developer-conference contests,
-    the 2003 entries are amateur. One file is marked SCEI CONFIDENTIAL.
+    including clipping and culling (`clip_cull.i`). Best reference for stage 12.
+  - `vu_coding_contest_2003_*`: VU1 demos written in VCL or VU assembly. The
+    harness is by SCEE staff (2003), for the 2003 PS2 Linux contest, which was
+    open to amateurs only; `_entries` holds its entries. `previous_demos` comes
+    from an earlier (2002) contest, whose entries include SCEA-copyrighted demos
+    and one by a professional developer at Monolith. One file is marked SCEI
+    CONFIDENTIAL.
   - `vcl-1.28`: VCL, the VU assembly optimiser (openvcl is the open successor).
   - `sps2dev-0.4.0`: PS2 Linux direct-hardware kit. Concepts carry over, the API doesn't.
 - `~/misc/dell linux backup/home/fox/Downloads/`: `final-gdc2002-clippingps2.pdf`
   (PS2 clipping, for stage 5) and `PS2Optimisations.pdf` (stage 10).
-- `~/Development/ps2/3dmod/`: the user's own 2004 PS2 Linux code (DMA, pad, textures, VU1 in VCL).
+- `~/Development/ps2/3dmod/`: the user's 2004 PS2 Linux experiments (DMA, pad, textures,
+  a little VU1 in VCL). Dabbling, not a reference: for VU code use ps2gl and the contest demos.
 - `~/Development/ps2/playstation2-linux.com.7z`: 1.7 GB archive of the PS2 Linux
   community site. Not yet inspected (needs 7z).
 
-## References
-- glampert/quake2-ps2: a modern, complete PS2SDK-only port. A good model for the
-  renderer, input, audio and memory card code.
-- jnmartin84/wipeout-dc commit history: shows how the code was adapted to a weak GPU.
+## References, ranked by quality
+Prefer higher tiers, above all for VU microcode and other assembly. Lower tiers
+are for ideas only, checked against a higher one before anything relies on them.
+Local material (paths above) is read for ideas, never copied.
+1. **Sony's own engineers.** The hardware manuals; ps2gl and ps2stuff (SCEA,
+   open-sourced; maintained as ps2dev/ps2gl and ps2dev/ps2stuff); VCL (SCEA);
+   Colin Hughes' GDC 2002 "PlayStation 2 Clipping" and George Bain's AGDC 2002
+   "PS2 Programming Optimisations" (both SCEE); the VU contest harness (SCEE)
+   and the SCEA demos in `previous_demos` (`invite`, `slow_motion`, `tree`).
+2. **Proven open source, widely used.** ps2sdk and gsKit (we build on them);
+   PCSX2's source (how the hardware behaves, and how VU timing is emulated);
+   ps2tek and psx-spx; ps2dev/openvcl (VCL's open successor);
+   glampert/quake2-ps2 (a complete PS2SDK-only port: renderer, input, audio,
+   memory card; not VU-heavy); jnmartin84/wipeout-dc's history (how this code
+   was adapted to a weak GPU).
+3. **Professional but one-off.** `marionette` in `previous_demos` (by a
+   Monolith developer).
+4. **Hobbyist.** h4570/tyra (an engine rendering through VU1, with VU1
+   clipping); blog posts; the 2003 contest's amateur entries and other
+   contest entries such as `peewee` (demoscene); the user's 2004
+   `3dmod` experiments; anything linked from awesome-lists.

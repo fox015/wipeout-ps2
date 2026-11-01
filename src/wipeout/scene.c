@@ -150,7 +150,8 @@ void scene_draw(camera_t *camera) {
 		float dist_sq = vec3_len_sq(diff);
 		if (
 			cam_dot < object->radius &&
-			dist_sq < drawdist
+			dist_sq < drawdist &&
+			render_box_visible(object->origin, object->radius)
 		) {
 			object_draw(object, object->mat);
 		}

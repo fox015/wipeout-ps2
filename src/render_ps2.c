@@ -17,6 +17,7 @@
 
 #include "render.h"
 #include "render_ps2.h"
+#include "prof_ps2.h"
 #include "mtx.h"
 #include "system.h"
 #include "utils.h"
@@ -68,6 +69,13 @@ static float shake_x = 320.0f;
 static float shake_y = 240.0f;
 static float shake_count = 0.0f;
 
+// Clip space to GS XYZ2 coordinates (12.4 fixed point, drawing offset added)
+// in one multiply-add per axis: x * kx / w + bx. Kept up to date with the
+// output height and the screen shake by update_screen_xform().
+static float screen_kx, screen_bx, screen_ky, screen_by;
+static void update_screen_xform(void);
+static void update_frustum(void);
+
 // GS state as last sent, so register writes are only queued on a change.
 static int depth_test = 1;
 static int depth_write = 1;
@@ -116,6 +124,7 @@ void render_init(void) {
 	gs_packet_init();
 
 	scale_y = (float)gs->Height / 480.0f;
+	update_screen_xform();
 	printf("GS: %dx%d, interlace %d, field %d, offset %d,%d, zbuf 0x%x\n",
 		gs->Width, gs->Height, gs->Interlace, gs->Field,
 		gs->OffsetX, gs->OffsetY, (unsigned)gs->ZBuffer);
@@ -129,10 +138,6 @@ void render_cleanup(void) {}
 
 // ---------------------------------------------------------------------------
 // Colour
-
-static rgba_t rgba_from_argb(uint32_t argb) {
-	return rgba((argb >> 16) & 0xff, (argb >> 8) & 0xff, argb & 0xff, argb >> 24);
-}
 
 static uint32_t float_bits(float f) {
 	union { float f; uint32_t u; } bits = {f};
@@ -155,6 +160,18 @@ static u64 rgbaq_from(rgba_t c, int textured, float q) {
 	return GS_SET_RGBAQ(c.r, c.g, c.b, (c.a + 1) >> 1, float_bits(q));
 }
 
+// rgbaq_from() for the game's packed ARGB, with bit operations instead of a
+// round trip through rgba_t: red and blue swap places, and (c + 1) >> 1
+// halves each channel with rounding.
+static u64 rgbaq_from_argb(uint32_t argb, int textured, float q) {
+	uint32_t rgb = ((argb >> 16) & 0xff) | (argb & 0xff00) | ((argb & 0xff) << 16);
+	if (textured && !ps1_colors) {
+		rgb = ((rgb >> 1) & 0x7f7f7f) + (rgb & 0x010101);
+	}
+	uint32_t a = ((argb >> 24) + 1) >> 1;
+	return (u64)(rgb | a << 24) | (u64)float_bits(q) << 32;
+}
+
 // ---------------------------------------------------------------------------
 // GS state
 
@@ -169,7 +186,14 @@ static u64 xyz_from(float x, float y, uint32_t z) {
 // misbehave. "Off" is ZTE=1 with ZTST=ALWAYS instead.
 // The alpha test drops pixels with alpha 0 (transparent texels) without
 // writing colour or Z.
+static int synced_depth = -1; // depth_test | depth_write << 1 when last synced
+
 static void sync_depth_state(void) {
+	int key = depth_test | depth_write << 1;
+	if (key == synced_depth) {
+		return;
+	}
+	synced_depth = key;
 	u64 test = GS_SET_TEST(1, 6, 0, 0, 0, 0, 1, depth_test ? 2 : 1); // alpha > 0; GEQUAL : ALWAYS
 	u64 zbuf = GS_SET_ZBUF(gs->ZBuffer / 8192, gs->PSMZ, depth_write ? 0 : 1);
 	if (test != sent_test) {
@@ -204,7 +228,13 @@ static u64 blend_alpha(render_blend_mode_t mode) {
 	}
 }
 
+static int synced_blend = -1;
+
 static void sync_blend_state(void) {
+	if ((int)render_state.blend_mode == synced_blend) {
+		return;
+	}
+	synced_blend = render_state.blend_mode;
 	u64 alpha = blend_alpha(render_state.blend_mode);
 	if (alpha != sent_alpha) {
 		gs_set_reg(GS_REG_ALPHA, alpha);
@@ -216,6 +246,7 @@ static void sync_blend_state(void) {
 // Frames
 
 void render_frame_prepare(void) {
+	prof_frame_start();
 	// gsKit clears colour and Z right away, before any of our packets.
 	gsKit_clear(gs, GS_SETREG_RGBAQ(0x00, 0x00, 0x00, 0x80, 0x00));
 	gsKit_queue_exec(gs);
@@ -223,6 +254,7 @@ void render_frame_prepare(void) {
 
 	gs_set_reg(GS_REG_COLCLAMP, GS_SET_COLCLAMP(1));
 	sent_test = sent_zbuf = sent_alpha = ~0ull;
+	synced_depth = synced_blend = -1;
 	textures_frame_start();
 	render_set_depth_write(true);
 	render_set_depth_test(true);
@@ -234,9 +266,12 @@ void render_frame_end(void) {
 	depth_write = 1;
 	depth_test = 0;
 	sync_depth_state();
+	prof_frame_work_done();
 	gs_flush();
+	prof_frame_flushed();
 	textures_frame_end();
 	gsKit_sync_flip(gs);
+	prof_frame_end();
 }
 
 // The GS draws in submission order, so there is no separate translucent pass.
@@ -277,6 +312,7 @@ void render_reset_proj(float farval) {
 	projection_mat.m[14] = f2;
 	vp_mat.m[10] = f1;
 	vp_mat.m[14] = f2;
+	update_frustum();
 }
 
 void render_set_resolution(render_resolution_t res) {
@@ -289,6 +325,50 @@ vec2i_t render_size(void) {
 	return screen_size;
 }
 
+// The view frustum's side and near planes in world space, as (a, b, c, d)
+// with a*x + b*y + c*z + d >= 0 inside, scaled to unit normals. They're the
+// clip-space tests (-w <= x <= w and so on) pulled back through vp * view.
+static float frustum[5][4];
+
+static void update_frustum(void) {
+	// rows of clip = vp_mat * view_mat
+	float row[4][4];
+	for (int r = 0; r < 4; r++) {
+		for (int c = 0; c < 4; c++) {
+			row[r][c] =
+				vp_mat.m[0 * 4 + r] * view_mat.m[c * 4 + 0] +
+				vp_mat.m[1 * 4 + r] * view_mat.m[c * 4 + 1] +
+				vp_mat.m[2 * 4 + r] * view_mat.m[c * 4 + 2] +
+				vp_mat.m[3 * 4 + r] * view_mat.m[c * 4 + 3];
+		}
+	}
+	// w + x (left), w - x (right), w + y (bottom), w - y (top), w + z (near)
+	static const int axis[5] = {0, 0, 1, 1, 2};
+	static const float sign[5] = {1, -1, 1, -1, 1};
+	for (int p = 0; p < 5; p++) {
+		float *f = frustum[p];
+		for (int c = 0; c < 4; c++) {
+			f[c] = row[3][c] + sign[p] * row[axis[p]][c];
+		}
+		float len = sqrtf(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+		for (int c = 0; c < 4; c++) {
+			f[c] /= len;
+		}
+	}
+}
+
+bool render_box_visible(vec3_t pos, float half_size) {
+	// The box fits in a sphere of half_size * sqrt(3), whatever its rotation.
+	float radius = half_size * 1.7321f;
+	for (int p = 0; p < 5; p++) {
+		const float *f = frustum[p];
+		if (f[0] * pos.x + f[1] * pos.y + f[2] * pos.z + f[3] < -radius) {
+			return false;
+		}
+	}
+	return true;
+}
+
 void render_set_view(vec3_t pos, vec3_t angles) {
 	render_set_depth_write(true);
 	render_set_depth_test(true);
@@ -298,6 +378,7 @@ void render_set_view(vec3_t pos, vec3_t angles) {
 	mat4_set_roll_pitch_yaw(&view_mat, vec3(angles.x, -angles.y + F_PI, angles.z + F_PI));
 	mat4_translate(&view_mat, vec3_inv(pos));
 	mat4_set_yaw_pitch_roll(&sprite_mat, vec3(-angles.x, angles.y - F_PI, 0));
+	update_frustum();
 }
 
 void render_set_view_2d(void) {
@@ -344,6 +425,13 @@ void render_set_cull_backface(bool enabled) { cull_backface = enabled; }
 // ---------------------------------------------------------------------------
 // Screen shake from weapon hits (as on the Dreamcast)
 
+static void update_screen_xform(void) {
+	screen_kx = 320.0f * 16.0f;
+	screen_bx = shake_x * 16.0f + gs->OffsetX;
+	screen_ky = -240.0f * scale_y * 16.0f;
+	screen_by = shake_y * scale_y * 16.0f + gs->OffsetY;
+}
+
 void SetShake(float duration) {
 	shake_count = duration / 30.0f;
 }
@@ -354,10 +442,12 @@ void ShakeScreen(void) {
 		shake_x = 320.0f + rand_float(-s, s);
 		shake_y = 240.0f + rand_float(-s, s);
 		shake_count -= system_tick();
-	} else {
+		update_screen_xform();
+	} else if (shake_x != 320.0f || shake_y != 240.0f) {
 		shake_x = 320.0f;
 		shake_y = 240.0f;
 		shake_count = 0.0f;
+		update_screen_xform();
 	}
 }
 
@@ -368,7 +458,7 @@ void ShakeScreen(void) {
 typedef struct {
 	float x, y, z, w;
 	float u, v;
-	rgba_t color;
+	uint32_t argb; // the game's packed colour, converted when packed for the GS
 } clip_vertex_t;
 
 // Signed distance from a clip plane; >= 0 is inside.
@@ -403,7 +493,7 @@ static int clip_poly(const clip_vertex_t *in, int n, clip_vertex_t *out, plane_f
 			c->w = a->w + (b->w - a->w) * t;
 			c->u = a->u + (b->u - a->u) * t;
 			c->v = a->v + (b->v - a->v) * t;
-			c->color = a->color; // flat across the cut, as on the Dreamcast
+			c->argb = a->argb; // flat across the cut, as on the Dreamcast
 		}
 	}
 	return out_n;
@@ -422,39 +512,29 @@ static int outcode(const clip_vertex_t *v) {
 	return code;
 }
 
-// Clip, project and draw a convex polygon given in clip space.
-static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
-	int all_out = ~0;
-	for (int i = 0; i < n; i++) {
-		all_out &= outcode(&poly[i]);
-	}
-	if (all_out) {
-		return;
-	}
+// Whether a vertex is outside any plane the clipper cuts against: the near
+// plane or the guard band. A polygon with none outside needs no clipping.
+static int needs_clip(const clip_vertex_t *v) {
+	float g = GUARD_BAND * v->w;
+	return v->z < -v->w || v->x < -g || v->x > g || v->y < -g || v->y > g;
+}
 
-	clip_vertex_t buf_a[CLIP_MAX], buf_b[CLIP_MAX];
-	clip_vertex_t *src = poly, *dst = buf_a;
-	for (int p = 0; p < (int)(sizeof(clip_planes) / sizeof(clip_planes[0])); p++) {
-		n = clip_poly(src, n, dst, clip_planes[p]);
-		if (n < 3) {
-			return;
-		}
-		src = dst;
-		dst = (dst == buf_a) ? buf_b : buf_a;
-	}
-
-	int textured = is_textured(texture_index);
-	gs_vertex_t gv[CLIP_MAX];
-	float sx[CLIP_MAX], sy[CLIP_MAX];
+// Project a convex polygon, cull it if it faces away, and send it to the GS
+// as one triangle fan. Its vertices are clip-space positions and w, with
+// their UVs and colours, n of each, given by stride so draw_vs() can pass vs[]
+// as it is.
+static void draw_projected(int n, const float *pos, int pos_stride, const float *w, int w_stride,
+		const float *uv, int uv_stride, const uint32_t *argb, int argb_stride, uint16_t texture_index) {
+	// Project first: the back-face test needs only screen x and y, so culled
+	// polygons skip building GS vertices.
+	// sx, sy are GS coordinates already (x16, offset); scaled and shifted
+	// screen positions, so the area's sign is the same.
+	float sx[CLIP_MAX], sy[CLIP_MAX], rw[CLIP_MAX];
 	for (int i = 0; i < n; i++) {
-		float rw = 1.0f / src[i].w;
-		sx[i] = shake_x + 320.0f * src[i].x * rw;
-		sy[i] = shake_y - 240.0f * src[i].y * rw;
-		float z = rw * Z_SCALE;
-		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
-		gv[i].rgbaq = rgbaq_from(src[i].color, textured, rw);
-		gv[i].uv = GS_SET_ST(float_bits(src[i].u * rw), float_bits(src[i].v * rw));
-		gv[i].xyz = xyz_from(sx[i], sy[i], iz);
+		const float *p = pos + i * pos_stride;
+		rw[i] = 1.0f / w[i * w_stride];
+		sx[i] = p[0] * rw[i] * screen_kx + screen_bx;
+		sy[i] = p[1] * rw[i] * screen_ky + screen_by;
 	}
 
 	if (cull_backface) {
@@ -468,42 +548,115 @@ static void draw_clip_poly(clip_vertex_t *poly, int n, uint16_t texture_index) {
 		}
 	}
 
+	int textured = is_textured(texture_index);
+	gs_vertex_t gv[CLIP_MAX];
+	for (int i = 0; i < n; i++) {
+		const float *t = uv + i * uv_stride;
+		float z = rw[i] * Z_SCALE;
+		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
+		gv[i].rgbaq = rgbaq_from_argb(argb[i * argb_stride], textured, rw[i]);
+		gv[i].uv = GS_SET_ST(float_bits(t[0] * rw[i]), float_bits(t[1] * rw[i]));
+		gv[i].xyz = GS_SET_XYZ((int)sx[i], (int)sy[i], iz);
+	}
+
 	sync_depth_state();
 	sync_blend_state();
 	if (textured) {
 		texture_bind(texture_index);
 	}
 
-	// Fan out from vertex 0.
-	u64 prim = GS_SET_PRIM(GS_PRIM_TRIANGLE, 1, textured, 0, 1, 0, 0, 0, 0);
-	for (int i = 1; i + 1 < n; i++) {
-		gs_vertex_t tri[3] = {gv[0], gv[i], gv[i + 1]};
-		gs_draw(prim, tri, 3);
-	}
+	// One triangle fan from vertex 0: a single PRIM write for the polygon.
+	gs_draw(GS_SET_PRIM(GS_PRIM_PRIM_TRIFAN, 1, textured, 0, 1, 0, 0, 0, 0), gv, n);
+	prof.triangles += n - 2;
 }
 
-// vs[] in the order of a triangle strip (0,1,2 and 1,2,3) to a polygon, in
-// clip space, with each position already transformed and its w given.
-static void draw_vs(const int *order, int n, const float *w, uint16_t texture_index) {
-	clip_vertex_t poly[4];
-	for (int i = 0; i < n; i++) {
-		const render_vertex_t *v = &vs[order[i]];
-		poly[i].x = v->x;
-		poly[i].y = v->y;
-		poly[i].z = v->z;
-		poly[i].w = w[order[i]];
-		poly[i].u = v->u;
-		poly[i].v = v->v;
-		poly[i].color = rgba_from_argb(v->argb);
-	}
-	draw_clip_poly(poly, n, texture_index);
-}
+#define CLIP_STRIDE (sizeof(clip_vertex_t) / sizeof(float))
 
 static const int quad_order[4] = {0, 1, 3, 2};
 static const int tri_order[3] = {0, 1, 2};
 
+// vs[] in the order of a triangle strip (0,1,2 and 1,2,3) to a polygon, in
+// clip space, with each position already transformed and its w given.
+// Polygons wholly off screen are dropped before anything is copied; those
+// wholly inside the near plane and guard band, nearly all of them, are drawn
+// straight from vs[]. Only the rest go through the clipper.
+static void draw_vs(const int *order, int n, const float *w, uint16_t texture_index) {
+	uint32_t t0 = prof_cycles();
+	prof.polys++;
+
+	int all_out = ~0, any_out = 0;
+	for (int i = 0; i < n; i++) {
+		const render_vertex_t *v = &vs[order[i]];
+		clip_vertex_t c = {.x = v->x, .y = v->y, .z = v->z, .w = w[order[i]]};
+		int code = outcode(&c);
+		all_out &= code;
+		// The guard band contains the frustum: only a vertex outside the
+		// frustum can be outside it.
+		if (code) {
+			any_out |= needs_clip(&c);
+		}
+	}
+	if (all_out) {
+		prof.render += prof_cycles() - t0;
+		return;
+	}
+	// Sky and sprites draw without depth writes and aren't scenery at a
+	// distance, so they stay out of the depth bands.
+	if (depth_write) {
+		float near_w = w[order[0]];
+		for (int i = 1; i < n; i++) {
+			near_w = fminf(near_w, w[order[i]]);
+		}
+		int band = 0;
+		while (band < PROF_DEPTH_BANDS - 1 && near_w >= prof_depth_band[band]) {
+			band++;
+		}
+		prof.depth[band]++;
+	}
+
+	if (!any_out) {
+		if (order == quad_order) {
+			// A quad's strip order 0 1 3 2 as a polygon: draw from a reordered
+			// copy of the four, as the strides can't express it.
+			render_vertex_t q[4] = {vs[0], vs[1], vs[3], vs[2]};
+			float qw[4] = {w[0], w[1], w[3], w[2]};
+			draw_projected(4, &q[0].x, sizeof(render_vertex_t) / sizeof(float), qw, 1,
+				&q[0].u, sizeof(render_vertex_t) / sizeof(float),
+				&q[0].argb, sizeof(render_vertex_t) / sizeof(uint32_t), texture_index);
+		}
+		else {
+			draw_projected(n, &vs[0].x, sizeof(render_vertex_t) / sizeof(float), w, 1,
+				&vs[0].u, sizeof(render_vertex_t) / sizeof(float),
+				&vs[0].argb, sizeof(render_vertex_t) / sizeof(uint32_t), texture_index);
+		}
+		prof.render += prof_cycles() - t0;
+		return;
+	}
+
+	clip_vertex_t poly[4];
+	for (int i = 0; i < n; i++) {
+		const render_vertex_t *v = &vs[order[i]];
+		poly[i] = (clip_vertex_t){v->x, v->y, v->z, w[order[i]], v->u, v->v, v->argb};
+	}
+	clip_vertex_t buf_a[CLIP_MAX], buf_b[CLIP_MAX];
+	clip_vertex_t *src = poly, *dst = buf_a;
+	for (int p = 0; p < (int)(sizeof(clip_planes) / sizeof(clip_planes[0])); p++) {
+		n = clip_poly(src, n, dst, clip_planes[p]);
+		if (n < 3) {
+			prof.render += prof_cycles() - t0;
+			return;
+		}
+		src = dst;
+		dst = (dst == buf_a) ? buf_b : buf_a;
+	}
+	draw_projected(n, &src[0].x, CLIP_STRIDE, &src[0].w, CLIP_STRIDE, &src[0].u, CLIP_STRIDE,
+		&src[0].argb, CLIP_STRIDE, texture_index);
+	prof.render += prof_cycles() - t0;
+}
+
 // Transform vs[0..n) by the current matrix into clip space, keeping w.
 static void transform_vs(int n, float *w) {
+	uint32_t t0 = prof_cycles();
 	const float *m = mtx_current.m;
 	for (int i = 0; i < n; i++) {
 		float x = vs[i].x, y = vs[i].y, z = vs[i].z;
@@ -512,6 +665,10 @@ static void transform_vs(int n, float *w) {
 		vs[i].z = m[2] * x + m[6] * y + m[10] * z + m[14];
 		w[i]    = m[3] * x + m[7] * y + m[11] * z + m[15];
 	}
+	uint32_t dt = prof_cycles() - t0;
+	prof.render += dt;
+	prof.xform += dt;
+	prof.verts += n;
 }
 
 void render_quad(uint16_t texture_index) {
@@ -666,7 +823,7 @@ static uint32_t vram_start; // first block after gsKit's buffers
 static uint32_t vram_next;
 
 static int32_t sent_texture = -1;
-static u64 sent_tex1 = ~0ull;
+static int sent_filter = -1;
 
 // Upload counts, logged once a second, and what the textures were stored as.
 static uint32_t stat_frames, stat_uploads, stat_bytes, stat_resets;
@@ -767,6 +924,7 @@ static void textures_vram_clear(void) {
 }
 
 static void texture_upload(texture_t *t) {
+	uint32_t t0 = prof_cycles();
 	uint32_t blocks = t->blocks + (t->clut ? clut_blocks(t->psm) : 0);
 	if (vram_next + blocks > VRAM_BLOCKS) {
 		textures_vram_clear();
@@ -789,6 +947,8 @@ static void texture_upload(texture_t *t) {
 
 	stat_uploads++;
 	stat_bytes += bytes;
+	prof.upload += prof_cycles() - t0;
+	prof.uploads++;
 }
 
 static int is_textured(uint16_t texture_index) {
@@ -810,10 +970,9 @@ static void texture_bind(uint16_t texture_index) {
 		sent_texture = texture_index;
 	}
 	int filter = save.filter && !t->unfiltered; // 1 = bilinear
-	u64 tex1 = GS_SET_TEX1(0, 0, filter, filter, 0, 0, 0);
-	if (tex1 != sent_tex1) {
-		gs_set_reg(GS_REG_TEX1, tex1);
-		sent_tex1 = tex1;
+	if (filter != sent_filter) {
+		gs_set_reg(GS_REG_TEX1, GS_SET_TEX1(0, 0, filter, filter, 0, 0, 0));
+		sent_filter = filter;
 	}
 }
 
@@ -822,7 +981,7 @@ static void textures_frame_start(void) {
 	gs_set_reg(GS_REG_TEXA, GS_SET_TEXA(0x00, 0, 0x80));
 	gs_set_reg(GS_REG_CLAMP, GS_SET_CLAMP(0, 0, 0, 0, 0, 0)); // repeat
 	sent_texture = -1;
-	sent_tex1 = ~0ull;
+	sent_filter = -1;
 }
 
 static void textures_frame_end(void) {
