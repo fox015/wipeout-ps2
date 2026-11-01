@@ -1,9 +1,10 @@
 #ifndef GS_PS2_H
 #define GS_PS2_H
 
-// A small GIF packet builder for the GS. Register writes and primitives are
-// packed into one buffer (GIF A+D format) and sent to the GS by DMA when it
-// fills up, or on gs_flush(). gsKit still owns display setup, clear and flip.
+// A small GIF packet builder for the GS. Register writes (GIF A+D format) and
+// primitives (REGLIST format) are packed into one buffer and sent to the GS
+// by DMA over PATH3 when it fills up, or on gs_flush(). gsKit still owns
+// display setup, clear and flip.
 
 #include <tamtypes.h>
 
