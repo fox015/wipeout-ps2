@@ -6,8 +6,9 @@
 // own pitch, volume and pan, as on the PS1. Reverb is core 1's hardware
 // effect, faded in and out for tunnels; it takes the music too.
 //
-// Music is QOA, read from the host as it plays (122 MB doesn't fit in RAM),
-// decoded on the EE and streamed to audsrv as 16-bit PCM by its own thread.
+// Music is SPU2 ADPCM (.spu files, made from the QOA tracks by
+// tools/convert_music.sh), streamed by ps2snd on the IOP: the IOP reads the
+// file and the SPU2 decodes it, so the EE only starts tracks and sets volume.
 
 #include <stdio.h>
 #include <string.h>
@@ -16,12 +17,7 @@
 #include <timer.h>
 #include <libsd.h>
 #include <ps2snd.h>
-#include <audsrv.h>
 #include <sifrpc.h>
-
-#define QOA_IMPLEMENTATION
-#define QOA_NO_STDIO
-#include "qoa.h"
 
 #include "utils.h"
 #include "mem.h"
@@ -33,10 +29,9 @@
 
 extern int sfx_from_menu;
 extern char *path_assets;
-extern void *_gp;
 
-static volatile int music_volume;
-static void music_init(void);
+static int music_volume;
+static void music_init(uint32_t spu_addr);
 
 // Recently played music, so random play avoids repeats. The menus use it too.
 volatile uint32_t last_five_tracks[5] = {-1, -1, -1, -1, -1};
@@ -44,9 +39,8 @@ volatile uint32_t last_five_tracks[5] = {-1, -1, -1, -1, -1};
 // Sound RAM: below 0x5000 is the cores' input buffers; the samples go after.
 #define SPU_SAMPLES_ADDR 0x5010
 
-// Sound effects use core 1's 24 voices. audsrv mutes core 0 (its master
-// volume goes to 0 whenever the music volume changes) and streams the music
-// into core 1, whose voices it only uses for its own ADPCM playback (unused).
+// Sound effects use core 1's 24 voices; the music streams through core 0
+// (see music_init()).
 #define VOICES 24
 #define CORE 1
 
@@ -141,7 +135,10 @@ static void batch_sync(void) {
 	batch_wait();
 }
 
+static void music_update(void);
+
 void sfx_ps2_frame_end(void) {
+	music_update();
 	batch_send();
 }
 
@@ -270,14 +267,11 @@ void sfx_load(void) {
 		nodes[i].data.voice = -1;
 	}
 
-	// Each libsd init resets every voice, volume and transfer. ps2snd's
-	// sceSdInit() connects its RPC client and initialises libsd; then
-	// audsrv_init() initialises it again and starts the music stream into
-	// core 1. Our settings go on top of that.
+	// ps2snd's sceSdInit() connects its RPC client and initialises libsd,
+	// which resets every voice, volume and transfer. Our settings go on top.
 	sceSdInit(0);
 	while (sceSifBindRpc(&batch_client, BINDID_PS2SND, 0) < 0 || !batch_client.server) {
 	}
-	audsrv_init();
 	sceSdSetParam(CORE | SD_PARAM_MVOLL, 0x3fff);
 	sceSdSetParam(CORE | SD_PARAM_MVOLR, 0x3fff);
 	sceSdSetSwitch(CORE | SD_SWITCH_VMIXL, 0xffffff);
@@ -300,8 +294,6 @@ void sfx_load(void) {
 	printf("sfx: reverb work area 0x%x-0x%x, mixer 0x%x\n",
 		(unsigned)sceSdGetAddr(CORE | SD_ADDR_ESA), (unsigned)sceSdGetAddr(CORE | SD_ADDR_EEA),
 		(unsigned)sceSdGetParam(CORE | SD_PARAM_MMIX));
-
-	music_init();
 
 	uint32_t vb_size;
 	uint8_t *vb = platform_load_asset("wipeout/sound/wipeout.vb", &vb_size);
@@ -332,6 +324,7 @@ void sfx_load(void) {
 	mem_temp_free(vb);
 	FlushCache(0);
 	int sent = sndLoadSample(samples, SPU_SAMPLES_ADDR, vb_size);
+	music_init((SPU_SAMPLES_ADDR + vb_size + 63) & ~63);
 
 	// What a voice parameter costs: each is a call to the IOP.
 	u32 sec, usec;
@@ -487,23 +480,28 @@ void sfx_set_position(sfx_t *sfx, vec3_t pos, vec3_t vel, float volume) {
 	sfx_update_ex(sfx);
 }
 
-// Music. The main thread only sets these; the music thread does all the
-// file reading, decoding and audsrv calls, so the game never waits on them.
+// Music: ps2snd streams a .spu file to two voices on core 0 (its streaming
+// uses core 0's SPU2 interrupt and DMA channel): left and right, in chunks of
+// MUSIC_CHUNK_BLOCKS ADPCM blocks, double-buffered in sound RAM. Core 0's
+// output is mixed into core 1, dry and into the reverb, as the PCM from
+// audsrv was before. The main loop starts tracks and, every MUSIC_POLL_FRAMES,
+// checks whether the track has ended (ps2snd closes the stream at the end of
+// the file) to start the next one.
 
-#define MUSIC_READ_SIZE (64 * 1024)
-#define MUSIC_CHUNK_FRAMES 1020 // stereo sample pairs per audsrv call, 23ms: 51 QOA slices
+#define MUSIC_VOICES (SD_VOICE(0, 0) | SD_VOICE(0, 1) << 16)
+#define MUSIC_CHUNK_BLOCKS 1024 // as tools/spu_music/spu_music.c
+#define MUSIC_POLL_FRAMES 30
+#define MUSIC_VOLUME_SCALE 0x3fff
 
-static volatile uint32_t music_track_index = -1;
-static volatile sfx_music_mode_t music_mode = SFX_MUSIC_RANDOM;
-static volatile int music_interrupt; // a new track was asked for
-static volatile int music_skip;      // end this track as if it finished
-static int music_start_sema = -1;
+static uint32_t music_spu_addr; // 4 buffers of MUSIC_CHUNK_BLOCKS blocks
+static uint32_t music_track_index = -1;
+static sfx_music_mode_t music_mode = SFX_MUSIC_RANDOM;
+static int music_requested; // a track to start at the end of the frame
+static int music_open;      // ps2snd has a stream open
+static int music_volume_sent = -1;
+static int music_poll;
 
-static uint8_t music_read_buf[MUSIC_READ_SIZE] __attribute__((aligned(64)));
-static short music_pcm[MUSIC_CHUNK_FRAMES * 2] __attribute__((aligned(64)));
-static uint8_t music_thread_stack[16 * 1024] __attribute__((aligned(16)));
-
-static __attribute__((unused)) bool music_track_recent(uint32_t index) {
+static bool music_track_recent(uint32_t index) {
 	for (int i = 0; i < 5; i++) {
 		if (last_five_tracks[i] == index) {
 			return true;
@@ -524,8 +522,8 @@ static void music_pick_next(void) {
 			index = rand_int(0, len(def.music));
 		} while (music_track_recent(index));
 #else
-		// This thread runs on real time: a rand() here would shift the
-		// benchmark race's random numbers.
+		// A rand() here would shift the benchmark race's random numbers.
+		(void)music_track_recent;
 		index = (music_track_index + 1) % len(def.music);
 #endif
 		for (int i = 1; i < 5; i++) {
@@ -540,183 +538,79 @@ static void music_pick_next(void) {
 	// SFX_MUSIC_LOOP and SFX_MUSIC_PAUSED play the same track again.
 }
 
-// Plays one track until it ends or another is asked for.
-// A QOA frame (5120 samples, 116 ms) took about 4.6 ms to decode in PCSX2,
-// all at once, and the music thread runs one priority above the game, so
-// every seventh frame or so went over budget. Decoding a chunk at a time, just
-// before audsrv needs it, spreads the same work over the frames that play it.
-// These do what qoa_decode_frame() does, in pieces, with qoa.h's own LMS
-// predictor and tables.
-typedef struct {
-	const unsigned char *bytes;
-	unsigned int p;       // the next slice
-	unsigned int samples; // per channel, in this frame
-	unsigned int decoded; // per channel, so far
-} music_frame_t;
-
-// Read a frame's header and LMS state. Returns the frame's size in bytes, or
-// 0 if there's no valid frame (the end of the track).
-static unsigned int music_frame_begin(music_frame_t *fr, const unsigned char *bytes, unsigned int size,
-		qoa_desc *qoa) {
-	if (size < 8 + QOA_LMS_LEN * 4 * qoa->channels) {
-		return 0;
+static void music_start(uint32_t index) {
+	batch_sync();
+	if (music_open) {
+		sndStreamClose();
+		music_open = 0;
 	}
-	unsigned int p = 0;
-	qoa_uint64_t frame_header = qoa_read_u64(bytes, &p);
-	unsigned int channels   = (frame_header >> 56) & 0x0000ff;
-	unsigned int samplerate = (frame_header >> 32) & 0xffffff;
-	unsigned int samples    = (frame_header >> 16) & 0x00ffff;
-	unsigned int frame_size = (frame_header      ) & 0x00ffff;
-	unsigned int num_slices = (frame_size - 8 - QOA_LMS_LEN * 4 * channels) / 8;
-	if (
-		channels != qoa->channels || samplerate != qoa->samplerate || frame_size > size ||
-		samples == 0 || samples * channels > num_slices * QOA_SLICE_LEN
-	) {
-		return 0;
-	}
-	for (unsigned int c = 0; c < channels; c++) {
-		qoa_uint64_t history = qoa_read_u64(bytes, &p);
-		qoa_uint64_t weights = qoa_read_u64(bytes, &p);
-		for (int i = 0; i < QOA_LMS_LEN; i++) {
-			qoa->lms[c].history[i] = (signed short)(history >> 48);
-			history <<= 16;
-			qoa->lms[c].weights[i] = (signed short)(weights >> 48);
-			weights <<= 16;
-		}
-	}
-	*fr = (music_frame_t){.bytes = bytes, .p = p, .samples = samples, .decoded = 0};
-	return frame_size;
-}
-
-// Decode the frame's next max samples per channel (a multiple of the slice
-// length) into pcm, interleaved. Returns how many it decoded.
-static unsigned int music_frame_decode(music_frame_t *fr, qoa_desc *qoa, short *pcm, unsigned int max) {
-	unsigned int channels = qoa->channels;
-	unsigned int start = fr->decoded;
-	unsigned int end = min(start + max, fr->samples);
-	for (unsigned int sample_index = start; sample_index < end; sample_index += QOA_SLICE_LEN) {
-		unsigned int slice_len = min(QOA_SLICE_LEN, fr->samples - sample_index);
-		for (unsigned int c = 0; c < channels; c++) {
-			qoa_uint64_t slice = qoa_read_u64(fr->bytes, &fr->p);
-			int scalefactor = (slice >> 60) & 0xf;
-			slice <<= 4;
-			short *out = pcm + (sample_index - start) * channels + c;
-			for (unsigned int i = 0; i < slice_len; i++) {
-				int predicted = qoa_lms_predict(&qoa->lms[c]);
-				int quantized = (slice >> 61) & 0x7;
-				int dequantized = qoa_dequant_tab[scalefactor][quantized];
-				int reconstructed = qoa_clamp_s16(predicted + dequantized);
-				out[i * channels] = reconstructed;
-				slice <<= 3;
-				qoa_lms_update(&qoa->lms[c], reconstructed, dequantized);
-			}
-		}
-	}
-	fr->decoded = end;
-	return end - start;
-}
-
-static void music_play_track(uint32_t index) {
-	// The game's paths are the Dreamcast's .adpcm files; ours are .qoa.
+	// The game's paths are the Dreamcast's .adpcm files; ours are .spu.
 	char path[64];
 	snprintf(path, sizeof(path), "%s%s", path_assets, def.music[index].path);
 	char *ext = strrchr(path, '.');
 	if (ext) {
-		strcpy(ext, ".qoa");
+		strcpy(ext, ".spu");
 	}
-
-	FILE *f = fopen(path, "rb");
-	if (!f) {
-		printf("music: could not open %s\n", path);
+	int r = sndStreamOpen(path, MUSIC_VOICES, 0, music_spu_addr, MUSIC_CHUNK_BLOCKS);
+	if (r < 0) {
+		printf("music: could not open %s (%d)\n", path, r);
 		return;
 	}
+	music_volume = 192 * save.music_volume; // as the Dreamcast's wav_create()
+	music_volume_sent = -1;
+	sndStreamPlay();
+	music_open = 1;
 	printf("music: %s\n", path);
+}
 
-	uint32_t have = fread(music_read_buf, 1, MUSIC_READ_SIZE, f);
-	qoa_desc qoa;
-	uint32_t pos = qoa_decode_header(music_read_buf, have, &qoa);
-	if (!pos || qoa.channels != 2) {
-		printf("music: %s is not stereo QOA\n", path);
-		fclose(f);
+// Once a frame, from sfx_ps2_frame_end().
+static void music_update(void) {
+	if (music_requested) {
+		music_requested = 0;
+		music_start(music_track_index);
 		return;
 	}
-
-	int volume_sent = -1;
-	while (!music_interrupt && !music_skip) {
-		// Keep at least one whole frame in the buffer.
-		if (have - pos < QOA_FRAME_SIZE(2, QOA_SLICES_PER_FRAME)) {
-			memmove(music_read_buf, music_read_buf + pos, have - pos);
-			have -= pos;
-			pos = 0;
-			have += fread(music_read_buf + have, 1, MUSIC_READ_SIZE - have, f);
-		}
-
-		music_frame_t frame;
-		uint32_t used = music_frame_begin(&frame, music_read_buf + pos, have - pos, &qoa);
-		if (!used) {
-			break; // end of the track
-		}
-		pos += used;
-
-		while (frame.decoded < frame.samples && !music_interrupt) {
-			// audsrv's volume is 0-100.
-			int volume = music_volume * 100 / 255;
-			if (volume != volume_sent) {
-				audsrv_set_volume(volume);
-				volume_sent = volume;
-			}
-			uint32_t frames = music_frame_decode(&frame, &qoa, music_pcm, MUSIC_CHUNK_FRAMES);
-			int bytes = frames * 2 * sizeof(short);
-			audsrv_wait_audio(bytes);
-			audsrv_play_audio((char *)music_pcm, bytes);
-		}
+	if (!music_open) {
+		return;
 	}
-	fclose(f);
-}
-
-static void music_thread(void *arg) {
-	WaitSema(music_start_sema); // the first sfx_music_play()
-	while (1) {
-		music_interrupt = 0;
-		music_skip = 0;
-		music_volume = 192 * save.music_volume; // as the Dreamcast's wav_create()
-		music_play_track(music_track_index);
-		if (!music_interrupt) {
+	if (music_volume != music_volume_sent) {
+		batch_sync();
+		int volume = music_volume * MUSIC_VOLUME_SCALE / 255;
+		sndStreamSetVolume(volume, volume);
+		music_volume_sent = music_volume;
+	}
+	if (++music_poll >= MUSIC_POLL_FRAMES) {
+		music_poll = 0;
+		batch_sync();
+		if (sndStreamGetPosition() < 0) { // closed: the track has ended
+			music_open = 0;
 			music_pick_next();
+			music_start(music_track_index);
 		}
 	}
 }
 
-static void music_init(void) {
-	audsrv_fmt_t fmt = {.freq = 44100, .bits = 16, .channels = 2};
-	audsrv_set_format(&fmt);
-	printf("music: audsrv ready, %d bytes of buffer\n", audsrv_available());
-
-	ee_sema_t sema = {.init_count = 0, .max_count = 1};
-	music_start_sema = CreateSema(&sema);
-
-	// One step above the game, so it runs whenever audsrv has room; it
-	// sleeps in audsrv_wait_audio() the rest of the time.
-	ee_thread_status_t status;
-	ReferThreadStatus(GetThreadId(), &status);
-	ee_thread_t thread = {
-		.func = music_thread,
-		.stack = music_thread_stack,
-		.stack_size = sizeof(music_thread_stack),
-		.gp_reg = &_gp,
-		.initial_priority = status.current_priority - 1,
-	};
-	StartThread(CreateThread(&thread), NULL);
+static void music_init(uint32_t spu_addr) {
+	music_spu_addr = spu_addr;
+	// Core 0 plays only the music; its output goes into core 1, dry and into
+	// the reverb.
+	sceSdSetParam(0 | SD_PARAM_MVOLL, 0x3fff);
+	sceSdSetParam(0 | SD_PARAM_MVOLR, 0x3fff);
+	sceSdSetSwitch(0 | SD_SWITCH_VMIXL, 3);
+	sceSdSetSwitch(0 | SD_SWITCH_VMIXR, 3);
+	sceSdSetParam(CORE | SD_PARAM_MMIX, 0xfff);
+	printf("music: stream buffers at 0x%x-0x%x in sound RAM\n", (unsigned)spu_addr,
+		(unsigned)(spu_addr + 4 * MUSIC_CHUNK_BLOCKS * 16));
 }
 
 void sfx_music_next(void) {
-	music_skip = 1;
+	music_pick_next();
+	music_requested = 1;
 }
 
 void sfx_music_play(uint32_t index) {
 	music_track_index = index;
-	music_interrupt = 1;
-	SignalSema(music_start_sema);
+	music_requested = 1;
 }
 
 void sfx_music_mode(sfx_music_mode_t mode) {

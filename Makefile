@@ -16,7 +16,7 @@ EE_OBJS = \
 	src/wipeout/track.o src/wipeout/ui.o src/wipeout/weapon.o
 
 # IOP modules built into the ELF, as C arrays made by bin2c.
-IRX = libsd audsrv ps2snd
+IRX = libsd ps2snd
 IRX_OBJS = $(IRX:%=src/irx/%_irx.o)
 
 # Display output: 480i (any TV), 480p (component cables),
@@ -31,7 +31,7 @@ EE_CFLAGS += -DVIDEO_$(VIDEO)
 src/render_ps2.o src/mtx_ps2.o src/gs_ps2.o: EE_CFLAGS += -O3 -ffast-math
 
 EE_INCS += -Isrc -I$(GSKIT)/include
-EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -lmc -laudsrv -lps2snd -lpatches -ldebug -lm
+EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -lmc -lps2snd -lpatches -ldebug -lm
 
 all: $(EE_BIN)
 
