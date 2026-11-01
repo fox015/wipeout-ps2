@@ -201,9 +201,12 @@ Read it before starting work on a stage.
 - `~/misc/dell linux backup/home/fox/ps2linux/ps2backup/`:
   - `ps2gl/vu1/`: Sony's (SCEA) open-source GL layer, with production VU1 renderers
     including clipping and culling (`clip_cull.i`). Best reference for stage 12.
-  - `vu_coding_contest_2003_*`: VU1 demos. The harness and macros are by SCEA/SCEE
-    staff, `previous_demos` has entries from SCEA's developer-conference contests,
-    the 2003 entries are amateur. One file is marked SCEI CONFIDENTIAL.
+  - `vu_coding_contest_2003_*`: VU1 demos written in VCL or VU assembly. The
+    harness is by SCEE staff (2003), for the 2003 PS2 Linux contest, which was
+    open to amateurs only; `_entries` holds its entries. `previous_demos` comes
+    from an earlier (2002) contest, whose entries include SCEA-copyrighted demos
+    and one by a professional developer at Monolith. One file is marked SCEI
+    CONFIDENTIAL.
   - `vcl-1.28`: VCL, the VU assembly optimiser (openvcl is the open successor).
   - `sps2dev-0.4.0`: PS2 Linux direct-hardware kit. Concepts carry over, the API doesn't.
 - `~/misc/dell linux backup/home/fox/Downloads/`: `final-gdc2002-clippingps2.pdf`
@@ -216,4 +219,8 @@ Read it before starting work on a stage.
 ## References
 - glampert/quake2-ps2: a modern, complete PS2SDK-only port. A good model for the
   renderer, input, audio and memory card code.
+- VU1 renderers online (read, don't copy): ps2dev/ps2gl (the maintained copy of
+  the local ps2gl, with ps2dev/ps2stuff), h4570/tyra (a PS2 engine rendering
+  through VU1, with VU1 clipping), ps2dev/openvcl (VCL's open successor).
+  PCSX2's source shows how VU timing is emulated.
 - jnmartin84/wipeout-dc commit history: shows how the code was adapted to a weak GPU.
