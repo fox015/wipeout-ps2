@@ -30,3 +30,4 @@ src/irx/
 
 # Sony hardware manuals and text extracted from them: copyrighted, local only
 docs/hw/
+tools/spu_music/spu_music
