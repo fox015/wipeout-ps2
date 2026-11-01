@@ -12,8 +12,12 @@ static struct {
 	uint64_t work, flush, vsync, dma_wait;
 	uint64_t qwords, triangles, render, polys, xform, verts, upload, uploads;
 	uint32_t worst; // the slowest frame's work
+	uint32_t over;  // frames whose work and final flush missed a 60Hz frame
 	uint64_t total;
 } sum;
+
+// One frame at 59.94Hz.
+#define FRAME_CYCLES (uint32_t)(PROF_HZ / 59.94f)
 
 static float ms(uint64_t cycles, uint32_t frames) {
 	return cycles * 1000.0f / PROF_HZ / frames;
@@ -50,15 +54,21 @@ void prof_frame_end(void) {
 	if (t_work - t_start > sum.worst) {
 		sum.worst = t_work - t_start;
 	}
+	if (t_flushed - t_start > FRAME_CYCLES) {
+		sum.over++;
+	}
 	sum.total += t_end - t_start;
 
 	if (sum.total >= PROF_HZ) {
 		uint32_t n = sum.frames;
 		// work includes the DMA waits of flushes made mid-frame.
-		printf("prof: %u frames, ms/frame: work %.2f, worst %.2f (upload %.2f for %u textures, render %.2f of which xform %.2f, dma wait %.2f), final flush %.2f, vsync %.2f; %u verts, %u polys, %u tris, %u KB to GS\n",
+		printf("prof: %u frames, ms/frame: work %.2f, worst %.2f (upload %.2f for %u textures, render %.2f of which xform %.2f, dma wait %.2f), final flush %.2f, vsync %.2f; %u verts, %u polys, %u tris, %u KB to GS; uncapped %.0f fps, %u frames over budget\n",
 			(unsigned)n, (double)ms(sum.work, n), (double)ms(sum.worst, 1), (double)ms(sum.upload, n), (unsigned)sum.uploads, (double)ms(sum.render, n), (double)ms(sum.xform, n), (double)ms(sum.dma_wait, n),
 			(double)ms(sum.flush, n), (double)ms(sum.vsync, n),
-			(unsigned)(sum.verts / n), (unsigned)(sum.polys / n), (unsigned)(sum.triangles / n), (unsigned)(sum.qwords * 16 / n / 1024));
+			(unsigned)(sum.verts / n), (unsigned)(sum.polys / n), (unsigned)(sum.triangles / n), (unsigned)(sum.qwords * 16 / n / 1024),
+			// What the frame rate would be without waiting for vsync: the
+			// EE's work plus the wait for the GS to take the last packet.
+			(double)(PROF_HZ * n / (sum.work + sum.flush)), (unsigned)sum.over);
 		sum = (typeof(sum)){0};
 	}
 }
