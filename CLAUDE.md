@@ -183,9 +183,13 @@ Read it before starting work on a stage.
   fps and frames over budget; `depth:` gives polygons by depth band and the
   camera's track section. In PCSX2 the counter is the emulator's estimate:
   compare runs, don't quote them as hardware figures.
-- Benchmarks: `tools/bench_intro.sh` (seconds 2–4 of the track02 intro, whose
-  camera is scripted) and `tools/bench_race.sh` (45 s of racing). Build first.
-  Performance commits and PRs quote them before and after.
+- Benchmarks: `tools/bench.sh` (one lap of track02, about 2 minutes) or
+  `tools/bench.sh all` (one lap of every circuit). It builds with `make BENCH=1`
+  or `BENCH=all`: the game races by itself with the AI driving, the camera
+  behind the ship, no weapons, a fixed seed and a fixed 1/60s tick, so every
+  run is the same race (`src/bench_ps2.h`). It prints `bench:` lines for each
+  intro and lap, then rebuilds the normal ELF. Nobody needs to touch PCSX2.
+  Performance commits and PRs quote it before and after.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
