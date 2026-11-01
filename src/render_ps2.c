@@ -735,10 +735,18 @@ void render_push_sprite(vec3_t pos, vec2i_t size, uint32_t color, uint16_t textu
 	mtx_load(&saved);
 
 	vec3_t p[4] = {vec3_add(pos, t1), vec3_add(pos, t2), vec3_add(pos, t3), vec3_add(pos, t4)};
+	// The whole texture, a texel in from each edge, as render_dc.c does.
+	vec2i_t tex_size = render_texture_size(texture_index);
+	vec2i_t pad_size = render_texture_padsize(texture_index);
+	float u0 = 1.0f / pad_size.x, u1 = (tex_size.x - 1.0f) / pad_size.x;
+	float v0 = 1.0f / pad_size.y, v1 = (tex_size.y - 1.0f) / pad_size.y;
+	const float u[4] = {u0, u1, u0, u1}, v[4] = {v0, v0, v1, v1};
 	for (int i = 0; i < 4; i++) {
 		vs[i].x = p[i].x;
 		vs[i].y = p[i].y;
 		vs[i].z = p[i].z;
+		vs[i].u = u[i];
+		vs[i].v = v[i];
 		vs[i].argb = color;
 		vs[i].oargb = 0; // not a pad
 	}
