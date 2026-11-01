@@ -17,10 +17,13 @@ static int packet_len = 0;
 static int last_tag = -1; // gets EOP when the packet is sent
 static int ad_tag = -1;   // the A+D tag register writes are added to, if any
 
+static void prim_tags_init(void);
+
 void gs_packet_init(void) {
 	dma_channel_initialize(DMA_CHANNEL_GIF, NULL, 0);
 	packet_len = 0;
 	last_tag = ad_tag = -1;
+	prim_tags_init();
 }
 
 void gs_flush(void) {
@@ -76,37 +79,67 @@ static inline u64 *add_data(int count) {
 }
 
 // A tag lists at most 16 registers: PRIM and up to 5 textured vertices (all
-// the game's own polygons) fit in one tag, written once. Larger polygons,
-// from the clipper, write PRIM in a tag of its own and loop over the vertices.
-u64 *gs_prim(u64 prim, int n) {
-	int textured = (prim & PRIM_TME) != 0;
-	u64 uv_reg = (prim & PRIM_FST) ? GIF_REG_UV : GIF_REG_ST;
-	int per_vertex = textured ? 3 : 2;
-	u64 vertex_regs = textured
-		? GIF_REG_RGBAQ | uv_reg << 4 | (u64)GIF_REG_XYZ2 << 8
+// the game's own polygons) fit in one tag. Those tags, and their register
+// lists, are built once here, by the kind of primitive (untextured, ST, UV)
+// and its vertex count.
+#define PRIM_KINDS 3
+#define PRIM_MAX_N 8
+static const u64 kind_uv_reg[PRIM_KINDS] = {0, GIF_REG_ST, GIF_REG_UV};
+static u64 prim_tag[PRIM_KINDS][PRIM_MAX_N], prim_regs[PRIM_KINDS][PRIM_MAX_N];
+
+static inline int prim_kind(u64 prim) {
+	return (prim & PRIM_TME) ? ((prim & PRIM_FST) ? 2 : 1) : 0;
+}
+
+static inline int per_vertex(int kind) {
+	return kind ? 3 : 2;
+}
+
+static inline u64 vertex_regs(int kind) {
+	return kind
+		? GIF_REG_RGBAQ | kind_uv_reg[kind] << 4 | (u64)GIF_REG_XYZ2 << 8
 		: GIF_REG_RGBAQ | (u64)GIF_REG_XYZ2 << 4;
-	int count = 1 + n * per_vertex;
+}
+
+static void prim_tags_init(void) {
+	for (int kind = 0; kind < PRIM_KINDS; kind++) {
+		for (int n = 1; n < PRIM_MAX_N; n++) {
+			int count = 1 + n * per_vertex(kind);
+			if (count > 16) {
+				break;
+			}
+			u64 regs = GIF_REG_PRIM;
+			for (int i = 0; i < n; i++) {
+				regs |= vertex_regs(kind) << (4 * (1 + i * per_vertex(kind)));
+			}
+			prim_tag[kind][n] = GIF_SET_TAG(1, 0, 0, 0, GIF_FLG_REGLIST, count);
+			prim_regs[kind][n] = regs;
+		}
+	}
+}
+
+// Larger polygons, from the clipper, write PRIM in a tag of its own and loop
+// over the vertices.
+u64 *gs_prim(u64 prim, int n) {
+	int kind = prim_kind(prim);
+	int count = 1 + n * per_vertex(kind);
 	int one_tag = count <= 16;
-	int qwords = one_tag ? 1 + (count + 1) / 2 : 3 + (n * per_vertex + 1) / 2;
+	int qwords = one_tag ? 1 + (count + 1) / 2 : 3 + count / 2;
 	if (packet_len + qwords > PACKET_QWORDS) {
 		gs_flush();
 	}
 	ad_tag = -1;
 
 	if (one_tag) {
-		u64 regs = GIF_REG_PRIM;
-		for (int i = 0; i < n; i++) {
-			regs |= vertex_regs << (4 * (1 + i * per_vertex));
-		}
-		add_tag(GIF_SET_TAG(1, 0, 0, 0, GIF_FLG_REGLIST, count), regs);
+		add_tag(prim_tag[kind][n], prim_regs[kind][n]);
 		u64 *data = add_data(count);
 		data[0] = prim;
 		return data + 1;
 	}
 	add_tag(GIF_SET_TAG(1, 0, 0, 0, GIF_FLG_REGLIST, 1), GIF_REG_PRIM);
 	add_data(1)[0] = prim;
-	add_tag(GIF_SET_TAG(n, 0, 0, 0, GIF_FLG_REGLIST, per_vertex), vertex_regs);
-	return add_data(n * per_vertex);
+	add_tag(GIF_SET_TAG(n, 0, 0, 0, GIF_FLG_REGLIST, per_vertex(kind)), vertex_regs(kind));
+	return add_data(count - 1);
 }
 
 void gs_draw(u64 prim, const gs_vertex_t *v, int n) {
