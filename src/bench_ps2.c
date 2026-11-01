@@ -35,7 +35,7 @@ typedef enum {
 
 typedef struct {
 	uint32_t frames, over;
-	uint64_t work, render, polys;
+	uint64_t work, render, polys, qwords;
 	uint32_t worst;
 } stats_t;
 
@@ -78,10 +78,10 @@ static void log_stats(const char *what) {
 	stats_t *s = &stats;
 	float ms = 1000.0f / PROF_HZ;
 	uint32_t n = s->frames ? s->frames : 1;
-	printf("bench: %s %s: %u frames, work %.2f ms avg, %.2f worst, render %.2f, %u polys; uncapped %.0f fps, %u frames over budget (%.1f%%)\n",
+	printf("bench: %s %s: %u frames, work %.2f ms avg, %.2f worst, render %.2f, %u polys, %.1f KB to GS; uncapped %.0f fps, %u frames over budget (%.1f%%)\n",
 		track_name(), what, (unsigned)s->frames,
 		(double)(s->work * ms / n), (double)(s->worst * ms), (double)(s->render * ms / n),
-		(unsigned)(s->polys / n),
+		(unsigned)(s->polys / n), (double)(s->qwords * 16 / 1024.0f / n),
 		(double)(s->work ? PROF_HZ * n / s->work : 0), (unsigned)s->over,
 		(double)(s->over * 100.0f / n));
 	memset(s, 0, sizeof(*s));
@@ -178,6 +178,7 @@ void bench_frame(uint32_t work, const prof_counters_t *counters) {
 	stats.work += work;
 	stats.render += counters->render;
 	stats.polys += counters->polys;
+	stats.qwords += counters->qwords;
 	if (work > stats.worst) {
 		stats.worst = work;
 	}

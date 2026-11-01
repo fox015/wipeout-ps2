@@ -8,9 +8,10 @@
 #   all     one lap of every circuit, about 15 minutes
 #
 # Prints the game's bench: lines: per track, the intro and the first lap
-# (frames, work and render ms per frame, polygons, uncapped fps, frames over
-# budget) and the lap's slowest track sections. The race plays out the same on
-# every run (see src/bench_ps2.h), so frame counts should match between runs.
+# (frames, work and render ms per frame, polygons, KB sent to the GS, uncapped
+# fps, frames over budget) and the lap's slowest track sections. The race
+# plays out the same on every run (see src/bench_ps2.h), so frame counts
+# should match between runs.
 # In PCSX2 the times are the emulator's estimates of EE cycles: compare runs,
 # don't quote them as hardware figures.
 
