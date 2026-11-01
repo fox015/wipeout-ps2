@@ -3,6 +3,7 @@
 #include "prof_ps2.h"
 #include "render.h"
 #include "wipeout/game.h"
+#include "bench_ps2.h"
 
 prof_counters_t prof;
 
@@ -57,6 +58,9 @@ void prof_frame_end(void) {
 	sum.verts += prof.verts;
 	sum.upload += prof.upload;
 	sum.uploads += prof.uploads;
+#ifdef BENCH
+	bench_frame(t_flushed - t_start, &prof);
+#endif
 	for (int i = 0; i < PROF_DEPTH_BANDS; i++) {
 		sum.depth[i] += prof.depth[i];
 	}

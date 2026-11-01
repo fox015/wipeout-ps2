@@ -7,7 +7,7 @@ EE_BIN = wipeout.elf
 EE_OBJS = \
 	src/alloc.o src/input.o src/mem.o src/system.o src/types.o src/utils.o \
 	src/platform_ps2.o src/render_ps2.o src/sfx_ps2.o src/mtx_ps2.o src/pad_ps2.o src/gs_ps2.o \
-	src/iop_ps2.o src/memcard_ps2.o src/prof_ps2.o $(IRX_OBJS) \
+	src/iop_ps2.o src/memcard_ps2.o src/prof_ps2.o src/bench_ps2.o $(IRX_OBJS) \
 	src/wipeout/camera.o src/wipeout/droid.o src/wipeout/game.o src/wipeout/hud.o \
 	src/wipeout/image.o src/wipeout/ingame_menus.o src/wipeout/intro.o \
 	src/wipeout/main_menu.o src/wipeout/menu.o src/wipeout/object.o \
@@ -35,12 +35,23 @@ EE_LIBS += -L$(GSKIT)/lib -lgskit -ldmakit -ldma -lpad -lmc -laudsrv -lps2snd -l
 
 all: $(EE_BIN)
 
-# Rebuild the renderer when VIDEO changes.
-VIDEO_STAMP = src/.video-$(VIDEO)
-$(VIDEO_STAMP):
-	rm -f src/.video-*
+# Benchmark builds: make BENCH=1 (one lap of track02) or BENCH=all (one lap
+# of every circuit). See src/bench_ps2.h.
+BENCH ?=
+ifeq ($(BENCH),1)
+EE_CFLAGS += -DBENCH
+else ifeq ($(BENCH),all)
+EE_CFLAGS += -DBENCH -DBENCH_ALL
+else ifneq ($(BENCH),)
+$(error BENCH must be 1 or all)
+endif
+
+# Rebuild what VIDEO and BENCH change when they do.
+CONFIG_STAMP = src/.config-$(VIDEO)-bench$(BENCH)
+$(CONFIG_STAMP):
+	rm -f src/.config-* src/.video-*
 	touch $@
-src/render_ps2.o: $(VIDEO_STAMP)
+src/render_ps2.o src/platform_ps2.o src/system.o src/sfx_ps2.o src/prof_ps2.o src/bench_ps2.o: $(CONFIG_STAMP)
 
 src/irx/%_irx.c: $(PS2SDK)/iop/irx/%.irx
 	mkdir -p src/irx
