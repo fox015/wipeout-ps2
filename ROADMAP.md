@@ -135,11 +135,15 @@ load at boot; a setting changed in the menus survived a reboot.
   hardware doesn't); the thin black band at the bottom in VGA mode under PCSX2.
 - Saves: on a real card, check save times (each libmc call waits) and the
   browser icon.
-- Sound: audsrv's buffer holds only 53ms, and music is read while levels load.
-  Listen for dropouts with the real data source (USB, disc or `host:`).
+- Sound: music streams from the IOP (stage 10.3), reading the file as it
+  plays, while levels load too. Listen for dropouts with the real data source.
 - ps2link + ps2client over the network for development.
-- Decide how a console finds the game data (it isn't redistributable): USB,
-  a disc image the user builds, or `host:`.
+- How a console finds the game data (it isn't redistributable): the user's
+  internal HDD, the plan. An APA-partitioned drive with a PFS filesystem, read
+  through ps2sdk's IOP modules (`ps2atad`, `ps2hdd`, `ps2fs`) as `pfs0:`, which
+  is an iomanX device: everything that opens game files, on the EE and the
+  IOP (the music stream), has to go through iomanX. USB or a disc image the
+  user builds are the alternatives; `host:` stays for development.
 - Output on the SDM-X53 via VGA.
 
 ### 10. Performance: the C path (PATH3)
@@ -213,6 +217,11 @@ exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
   wipeout-rewrite's 64000 saved 1.2–2.7 ms a lap, with no fade (it pops in).
 
 ### 13. Our enhancements
+- **Music from the original CD audio.** The `.spu` music is converted from
+  wipeout-rewrite's QOA tracks (`tools/convert_music.sh`), one lossy format into
+  another (30–35 dB SNR against the QOA). Encoding from the user's own rip of
+  the original CD audio would avoid that loss: the converter would take WAV.
+  The user rips the discs; nothing is extracted here.
 - **neGcon.** The original PS1 wipEout supported Namco's twist controller, and the
   PS2's BIOS pad driver identifies it (libpad's `PAD_TYPE_NEJICON`). Map the twist
   to steering and the analog I, II and L buttons to thrust, fire and airbrake, and
