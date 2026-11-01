@@ -7,8 +7,9 @@
 // effect, faded in and out for tunnels; it takes the music too.
 //
 // Music is SPU2 ADPCM (.spu files, made from the QOA tracks by
-// tools/convert_music.sh), streamed by ps2snd on the IOP: the IOP reads the
-// file and the SPU2 decodes it, so the EE only starts tracks and sets volume.
+// tools/convert_music.sh), streamed by our IOP module (iop/music/): the IOP
+// reads the file and the SPU2 decodes it, so the EE only starts tracks and
+// sets the volume.
 
 #include <stdio.h>
 #include <string.h>
@@ -480,24 +481,38 @@ void sfx_set_position(sfx_t *sfx, vec3_t pos, vec3_t vel, float volume) {
 	sfx_update_ex(sfx);
 }
 
-// Music: ps2snd streams a .spu file to two voices on core 0 (its streaming
-// uses core 0's SPU2 interrupt and DMA channel): left and right, in chunks of
-// MUSIC_CHUNK_BLOCKS ADPCM blocks, double-buffered in sound RAM. Core 0's
-// output is mixed into core 1, dry and into the reverb, as the PCM from
-// audsrv was before. The main loop starts tracks and, every MUSIC_POLL_FRAMES,
-// checks whether the track has ended (ps2snd closes the stream at the end of
-// the file) to start the next one.
+// Music: iop/music/ streams a .spu file to core 0's voices 0 and 1, double-
+// buffered in sound RAM at music_spu_addr. Core 0 plays only the music; its
+// output is mixed into core 1, dry and into the reverb. The main loop starts
+// tracks and, every MUSIC_POLL_FRAMES, asks whether the track has ended, to
+// start the next one. The module answers that without waiting on its file
+// reads.
 
-#define MUSIC_VOICES (SD_VOICE(0, 0) | SD_VOICE(0, 1) << 16)
-#define MUSIC_CHUNK_BLOCKS 1024 // as tools/spu_music/spu_music.c
+#define MUSIC_RPC_ID 0x57504d55 // as iop/music/music.c
+enum {
+	MUSIC_OPEN = 1,
+	MUSIC_CLOSE,
+	MUSIC_VOLUME,
+	MUSIC_ENDED,
+};
+#define MUSIC_CHUNK_BLOCKS 1024 // as iop/music/music.c and tools/spu_music/spu_music.c
 #define MUSIC_POLL_FRAMES 30
 #define MUSIC_VOLUME_SCALE 0x3fff
 
-static uint32_t music_spu_addr; // 4 buffers of MUSIC_CHUNK_BLOCKS blocks
+static SifRpcClientData_t music_client;
+static uint32_t music_rpc_send[32] __attribute__((aligned(64)));
+static uint32_t music_rpc_reply[16] __attribute__((aligned(64)));
+
+static uint32_t music_rpc(int function, int send_bytes) {
+	sceSifCallRpc(&music_client, function, 0, music_rpc_send, send_bytes, music_rpc_reply, 16, NULL, NULL);
+	return music_rpc_reply[0];
+}
+
+static uint32_t music_spu_addr; // 4 halves of MUSIC_CHUNK_BLOCKS blocks
 static uint32_t music_track_index = -1;
 static sfx_music_mode_t music_mode = SFX_MUSIC_RANDOM;
 static int music_requested; // a track to start at the end of the frame
-static int music_open;      // ps2snd has a stream open
+static int music_open;      // a track is playing
 static int music_volume_sent = -1;
 static int music_poll;
 
@@ -539,28 +554,19 @@ static void music_pick_next(void) {
 }
 
 static void music_start(uint32_t index) {
-	batch_sync();
-	if (music_open) {
-		sndStreamClose();
-		music_open = 0;
-	}
 	// The game's paths are the Dreamcast's .adpcm files; ours are .spu.
-	char path[64];
-	snprintf(path, sizeof(path), "%s%s", path_assets, def.music[index].path);
+	char *path = (char *)&music_rpc_send[1];
+	snprintf(path, sizeof(music_rpc_send) - 4, "%s%s", path_assets, def.music[index].path);
 	char *ext = strrchr(path, '.');
 	if (ext) {
 		strcpy(ext, ".spu");
 	}
-	int r = sndStreamOpen(path, MUSIC_VOICES, 0, music_spu_addr, MUSIC_CHUNK_BLOCKS);
-	if (r < 0) {
-		printf("music: could not open %s (%d)\n", path, r);
-		return;
-	}
+	music_rpc_send[0] = music_spu_addr;
 	music_volume = 192 * save.music_volume; // as the Dreamcast's wav_create()
 	music_volume_sent = -1;
-	sndStreamPlay();
-	music_open = 1;
-	printf("music: %s\n", path);
+	int r = (int)music_rpc(MUSIC_OPEN, 4 + strlen(path) + 1);
+	music_open = r == 0;
+	printf(r == 0 ? "music: %s\n" : "music: could not play %s\n", path);
 }
 
 // Once a frame, from sfx_ps2_frame_end().
@@ -574,15 +580,13 @@ static void music_update(void) {
 		return;
 	}
 	if (music_volume != music_volume_sent) {
-		batch_sync();
-		int volume = music_volume * MUSIC_VOLUME_SCALE / 255;
-		sndStreamSetVolume(volume, volume);
+		music_rpc_send[0] = music_rpc_send[1] = music_volume * MUSIC_VOLUME_SCALE / 255;
+		music_rpc(MUSIC_VOLUME, 8);
 		music_volume_sent = music_volume;
 	}
 	if (++music_poll >= MUSIC_POLL_FRAMES) {
 		music_poll = 0;
-		batch_sync();
-		if (sndStreamGetPosition() < 0) { // closed: the track has ended
+		if (music_rpc(MUSIC_ENDED, 0)) {
 			music_open = 0;
 			music_pick_next();
 			music_start(music_track_index);
@@ -592,6 +596,8 @@ static void music_update(void) {
 
 static void music_init(uint32_t spu_addr) {
 	music_spu_addr = spu_addr;
+	while (sceSifBindRpc(&music_client, MUSIC_RPC_ID, 0) < 0 || !music_client.server) {
+	}
 	// Core 0 plays only the music; its output goes into core 1, dry and into
 	// the reverb.
 	sceSdSetParam(0 | SD_PARAM_MVOLL, 0x3fff);

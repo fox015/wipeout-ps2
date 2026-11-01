@@ -7,11 +7,16 @@
 
 #include "iop_ps2.h"
 
-// The .irx files from ps2sdk, turned into arrays by bin2c (see Makefile).
+// The .irx files from ps2sdk, and our own music streamer (iop/music/),
+// turned into arrays by bin2c (see Makefile).
 extern unsigned char libsd_irx[];
 extern unsigned int size_libsd_irx;
 extern unsigned char ps2snd_irx[];
 extern unsigned int size_ps2snd_irx;
+extern unsigned char iomanX_irx[];
+extern unsigned int size_iomanX_irx;
+extern unsigned char music_irx[];
+extern unsigned int size_music_irx;
 
 static int load(const char *name, void *irx, unsigned int size) {
 	int ret = 0;
@@ -29,8 +34,11 @@ int iop_load_sound_modules(void) {
 	// Older BIOSes can't load modules from EE memory without this.
 	sbv_patch_enable_lmb();
 
+	// The music streamer opens files through iomanX, as the HDD needs.
 	if (load("libsd", libsd_irx, size_libsd_irx) < 0 ||
-		load("ps2snd", ps2snd_irx, size_ps2snd_irx) < 0) {
+		load("ps2snd", ps2snd_irx, size_ps2snd_irx) < 0 ||
+		load("iomanX", iomanX_irx, size_iomanX_irx) < 0 ||
+		load("music", music_irx, size_music_irx) < 0) {
 		return -1;
 	}
 	return 0;

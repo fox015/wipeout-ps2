@@ -15,9 +15,10 @@ EE_OBJS = \
 	src/wipeout/ship_ai.o src/wipeout/ship_player.o src/wipeout/title.o \
 	src/wipeout/track.o src/wipeout/ui.o src/wipeout/weapon.o
 
-# IOP modules built into the ELF, as C arrays made by bin2c.
-IRX = libsd ps2snd
-IRX_OBJS = $(IRX:%=src/irx/%_irx.o)
+# IOP modules built into the ELF, as C arrays made by bin2c: ps2sdk's, and
+# our music streamer (iop/music/).
+IRX = libsd ps2snd iomanX
+IRX_OBJS = $(IRX:%=src/irx/%_irx.o) src/irx/music_irx.o
 
 # Display output: 480i (any TV), 480p (component cables),
 # vga (VGA monitor through the PS2 Linux kit adapter). e.g. make VIDEO=480i
@@ -63,9 +64,17 @@ src/irx/%_irx.c: $(PS2SDK)/iop/irx/%.irx
 	mkdir -p src/irx
 	bin2c $< $@ $*_irx
 
+iop/music/music.irx: iop/music/music.c iop/music/imports.lst iop/music/irx_imports.h
+	$(MAKE) -C iop/music
+
+src/irx/music_irx.c: iop/music/music.irx
+	mkdir -p src/irx
+	bin2c $< $@ music_irx
+
 clean:
 	rm -f $(EE_BIN) $(EE_OBJS)
 	rm -rf src/irx
+	$(MAKE) -C iop/music clean
 
 include $(PS2SDK)/samples/Makefile.pref
 include $(PS2SDK)/samples/Makefile.eeglobal
