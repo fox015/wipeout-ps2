@@ -13,7 +13,8 @@ Read it before starting work on a stage.
   through the menus into a race, fully textured and blended, with sound effects,
   music and tunnel reverb, and settings and records save to the memory card.
   Stage 10.1 (profiling and cutting the renderer's work) is done: menus run at
-  60fps, races at 52–60fps in PCSX2 (performance is stages 10–12).
+  60fps; in PCSX2 a lap of any circuit averages 95–121fps uncapped, with
+  0.6–4.8% of frames over budget (performance is stages 10–12).
   Next up: stage 10.2 (leaner GS packets), then stage 9 (real hardware).
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept

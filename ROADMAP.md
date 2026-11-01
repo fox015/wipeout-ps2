@@ -152,10 +152,14 @@ on hardware, for true figures.
   (with uncapped fps, frames over budget and polygons by depth). Frustum culling
   of track sections and scenery; a fast path that skips the clipper for polygons
   inside the guard band; drawing straight from `vs[]`; cached GS state;
-  `-O3 -ffast-math` on the renderer. The benchmarks are in `tools/`.
-  Result in PCSX2, against stage 8: the track02 intro went from about 21 to
-  57fps (79fps uncapped), and 45 s of racing from 36fps on average (20 at
-  worst, never 60) to 60fps for 37–38 s (52 at worst).
+  `-O3 -ffast-math` on the renderer. A benchmark build that races one lap
+  by itself, the same race every run (`tools/bench.sh`).
+  Result in PCSX2 on track02, against stage 8 with the same benchmark: the
+  intro's work per frame went from 38.8 to 13.1 ms (26 to 76fps uncapped),
+  the lap's from 22.6 to 8.2 ms (44 to 121fps uncapped), and frames over
+  budget in the lap from 71.5% to 1.0%. Across all seven circuits a lap now
+  averages 95–121fps uncapped, with 0.6–4.8% of frames over budget; the
+  heaviest intro is track08's (16.2 ms, 46% of frames over).
 - **10.2 Leaner GS packets.** REGLIST GIF tags instead of A+D: 24 bytes per
   textured vertex instead of 48, half of which are register numbers. Written
   straight into the packet, without the intermediate `gs_vertex_t` copy.
