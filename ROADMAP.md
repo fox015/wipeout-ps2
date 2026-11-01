@@ -27,7 +27,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
-| 10 | Performance: the C path (10.1 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.4 |
+| 10 | Performance: the C path (10.1 ✅, 10.2 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.4 |
 | 11 | Performance: VU0 macro mode | Vertex maths on VU0, measured on real hardware |
 | 12 | Performance: VU1 renderer | Transform, clip and packets on VU1 (PATH1); 60fps with headroom on real hardware in a full race |
 | 13 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
@@ -161,13 +161,25 @@ on hardware, for true figures.
   averages 95–121fps uncapped, with 0.6–4.8% of frames over budget; the
   heaviest intro is track08's (16.2 ms, 46% of frames over).
 - **10.2 Leaner GS packets.** REGLIST GIF tags instead of A+D: 24 bytes per
-  textured vertex instead of 48, half of which are register numbers. Written
-  straight into the packet, without the intermediate `gs_vertex_t` copy.
+  textured vertex instead of 48, half of which were register numbers. Written
+  straight into the packet, without the intermediate `gs_vertex_t` copy; tags
+  and register lists built once. Also: the back-face test computed relative to
+  the first vertex (it had float cancellation at GS coordinates around 32000),
+  the renderer timed from `draw_vs()`'s callers (its entry and exit had been
+  left out of render time), and `tools/bench.sh shot N` for frame-exact
+  screenshots.
+  Result in PCSX2: a third less data to the GS (track02 lap 169 to 114 KB a
+  frame), but each lap 0.13–0.28 ms slower (track02 8.23 to 8.37 ms): at 10
+  MB/s, bandwidth was never the bottleneck, and gcc's inlining around the new
+  code made `draw_vs()`'s register saves bigger. A lap now averages 93–119fps
+  uncapped across the circuits, with 0.9–5.4% of frames over budget. Real
+  hardware decides whether the smaller packets pay.
 - **10.3 Draw distance and fade.** wipeout-rewrite draws to 64000 and fades
   vertex alpha from 48000; the Dreamcast port cuts off hard at up to 96000 per
   section. Restore the fade and shorter distances, keeping longer ones only where
   they're worth it. It changes the look, so the PR shows screenshots of the
-  worst sections (found with the `depth:` log).
+  worst sections (found with the `depth:` log). In a frozen frame on track02
+  (lap frame 1080), 93 of the 554 polygons drawn cover less than a pixel.
 - **10.4 Game logic and loading.** Profile the game's own work (about 4 ms a
   frame in the track02 intro), plus:
   - Texture loading: `render_texture_create()` finds each texture's colours to
