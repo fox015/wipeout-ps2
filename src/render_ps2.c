@@ -585,7 +585,6 @@ static const int tri_order[3] = {0, 1, 2};
 // wholly inside the near plane and guard band, nearly all of them, are drawn
 // straight from vs[]. Only the rest go through the clipper.
 static void draw_vs(const int *order, int n, const float *w, uint16_t texture_index) {
-	uint32_t t0 = prof_cycles();
 	prof.polys++;
 
 	int all_out = ~0, any_out = 0;
@@ -601,7 +600,6 @@ static void draw_vs(const int *order, int n, const float *w, uint16_t texture_in
 		}
 	}
 	if (all_out) {
-		prof.render += prof_cycles() - t0;
 		return;
 	}
 	// Sky and sprites draw without depth writes and aren't scenery at a
@@ -633,7 +631,6 @@ static void draw_vs(const int *order, int n, const float *w, uint16_t texture_in
 				&vs[0].u, sizeof(render_vertex_t) / sizeof(float),
 				&vs[0].argb, sizeof(render_vertex_t) / sizeof(uint32_t), texture_index);
 		}
-		prof.render += prof_cycles() - t0;
 		return;
 	}
 
@@ -647,7 +644,6 @@ static void draw_vs(const int *order, int n, const float *w, uint16_t texture_in
 	for (int p = 0; p < (int)(sizeof(clip_planes) / sizeof(clip_planes[0])); p++) {
 		n = clip_poly(src, n, dst, clip_planes[p]);
 		if (n < 3) {
-			prof.render += prof_cycles() - t0;
 			return;
 		}
 		src = dst;
@@ -655,6 +651,13 @@ static void draw_vs(const int *order, int n, const float *w, uint16_t texture_in
 	}
 	draw_projected(n, &src[0].x, CLIP_STRIDE, &src[0].w, CLIP_STRIDE, &src[0].u, CLIP_STRIDE,
 		&src[0].argb, CLIP_STRIDE, texture_index);
+}
+
+// draw_vs(), timed from outside it, so that its own entry and exit (saving
+// and restoring registers) count as render time too.
+static inline void draw_vs_timed(const int *order, int n, const float *w, uint16_t texture_index) {
+	uint32_t t0 = prof_cycles();
+	draw_vs(order, n, w, texture_index);
 	prof.render += prof_cycles() - t0;
 }
 
@@ -686,35 +689,35 @@ void render_quad(uint16_t texture_index) {
 	// twice with blending instead.
 	if (vs[0].oargb > 2) {
 		ps1_colors = 1;
-		draw_vs(quad_order, 4, w, texture_index);
+		draw_vs_timed(quad_order, 4, w, texture_index);
 		ps1_colors = 0;
 		return;
 	}
-	draw_vs(quad_order, 4, w, texture_index);
+	draw_vs_timed(quad_order, 4, w, texture_index);
 }
 
 void render_tri(uint16_t texture_index) {
 	float w[3];
 	transform_vs(3, w);
-	draw_vs(tri_order, 3, w, texture_index);
+	draw_vs_timed(tri_order, 3, w, texture_index);
 }
 
 void render_quad_noxform(uint16_t texture_index, float *w) {
-	draw_vs(quad_order, 4, w, texture_index);
+	draw_vs_timed(quad_order, 4, w, texture_index);
 }
 
 void render_tri_noxform(uint16_t texture_index, float *w) {
-	draw_vs(tri_order, 3, w, texture_index);
+	draw_vs_timed(tri_order, 3, w, texture_index);
 }
 
 // The caller has checked every vertex is in front of the near plane; the
 // clipper finds nothing to cut, so these share the clipping path.
 void render_quad_noxform_noclip(uint16_t texture_index, float *w) {
-	draw_vs(quad_order, 4, w, texture_index);
+	draw_vs_timed(quad_order, 4, w, texture_index);
 }
 
 void render_tri_noxform_noclip(uint16_t texture_index, float *w) {
-	draw_vs(tri_order, 3, w, texture_index);
+	draw_vs_timed(tri_order, 3, w, texture_index);
 }
 
 void render_hud_quad(uint16_t texture_index) {
