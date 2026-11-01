@@ -12,8 +12,9 @@ Read it before starting work on a stage.
 - Stages 0–8 are done. In PCSX2 the pad drives the game from the title screen
   through the menus into a race, fully textured and blended, with sound effects,
   music and tunnel reverb, and settings and records save to the memory card.
-  Menus run at 60fps, races at 30–60fps (performance is stages 10–12).
-  Next up: stage 9 (real hardware).
+  Stage 10.1 (profiling and cutting the renderer's work) is done: menus run at
+  60fps, races at 52–60fps in PCSX2 (performance is stages 10–12).
+  Next up: stage 10.2 (leaner GS packets), then stage 9 (real hardware).
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
@@ -79,6 +80,12 @@ Read it before starting work on a stage.
   3D follows `render_dc.c`'s maths, with a general polygon clipper (near plane +
   GS guard band) in place of its hand-written quad cases. Depth is 1/w in a
   16-bit Z-buffer, GEQUAL.
+  Since stage 10.1: track sections and scenery outside the view frustum are
+  skipped (`render_box_visible()`, called from `track.c` and `scene.c`); a
+  polygon inside the guard band is drawn straight from `vs[]` without the
+  clipper; GS state is sent only when it changes; the renderer, `mtx_ps2.c` and
+  `gs_ps2.c` build with `-O3 -ffast-math`. All drawing goes over PATH3 (the EE
+  builds packets, DMA channel 2 sends them to the GIF; see ROADMAP.md).
 - PS2 textures: every texture stays in RAM, padded to powers of two as on the
   Dreamcast (game code divides UVs by `render_texture_padsize()`). The game hands
   over 16-bit colours, but nearly all textures have 16 or 256 colours at most, so
@@ -170,6 +177,15 @@ Read it before starting work on a stage.
   Pad1 keyboard bindings, listed in the script), `tools/pcsx2_input.sh shot` takes a
   screenshot and prints its path. From the title, 5 Cross presses start a race
   (track02).
+- Profiling: `prof_ps2.c` reads the EE's cycle counter (COP0 Count) and logs
+  once a second. `prof:` gives ms per frame (work, render, transform, DMA wait,
+  final flush, vsync), polygon and vertex counts, KB sent to the GS, uncapped
+  fps and frames over budget; `depth:` gives polygons by depth band and the
+  camera's track section. In PCSX2 the counter is the emulator's estimate:
+  compare runs, don't quote them as hardware figures.
+- Benchmarks: `tools/bench_intro.sh` (seconds 2–4 of the track02 intro, whose
+  camera is scripted) and `tools/bench_race.sh` (45 s of racing). Build first.
+  Performance commits and PRs quote them before and after.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.

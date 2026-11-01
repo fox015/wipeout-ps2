@@ -27,7 +27,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
-| 10 | Performance: the C path | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.4 |
+| 10 | Performance: the C path (10.1 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.4 |
 | 11 | Performance: VU0 macro mode | Vertex maths on VU0, measured on real hardware |
 | 12 | Performance: VU1 renderer | Transform, clip and packets on VU1 (PATH1); 60fps with headroom on real hardware in a full race |
 | 13 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
@@ -152,7 +152,10 @@ on hardware, for true figures.
   (with uncapped fps, frames over budget and polygons by depth). Frustum culling
   of track sections and scenery; a fast path that skips the clipper for polygons
   inside the guard band; drawing straight from `vs[]`; cached GS state;
-  `-O3 -ffast-math` on the renderer. The benchmarks go in `tools/`.
+  `-O3 -ffast-math` on the renderer. The benchmarks are in `tools/`.
+  Result in PCSX2, against stage 8: the track02 intro went from about 21 to
+  57fps (79fps uncapped), and 45 s of racing from 36fps on average (20 at
+  worst, never 60) to 60fps for 37–38 s (52 at worst).
 - **10.2 Leaner GS packets.** REGLIST GIF tags instead of A+D: 24 bytes per
   textured vertex instead of 48, half of which are register numbers. Written
   straight into the packet, without the intermediate `gs_vertex_t` copy.
