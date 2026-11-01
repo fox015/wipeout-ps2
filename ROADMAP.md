@@ -27,7 +27,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
 | 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
-| 10 | Performance: the C path (10.1 ✅, 10.2 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.4 |
+| 10 | Performance: the C path (10.1 ✅, 10.2 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.3 |
 | 11 | Performance: VU0 macro mode | Vertex maths on VU0, measured on real hardware |
 | 12 | Performance: VU1 renderer | Transform, clip and packets on VU1 (PATH1); 60fps with headroom on real hardware in a full race |
 | 13 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
@@ -174,13 +174,7 @@ on hardware, for true figures.
   code made `draw_vs()`'s register saves bigger. A lap now averages 93–119fps
   uncapped across the circuits, with 0.9–5.4% of frames over budget. Real
   hardware decides whether the smaller packets pay.
-- **10.3 Draw distance and fade.** wipeout-rewrite draws to 64000 and fades
-  vertex alpha from 48000; the Dreamcast port cuts off hard at up to 96000 per
-  section. Restore the fade and shorter distances, keeping longer ones only where
-  they're worth it. It changes the look, so the PR shows screenshots of the
-  worst sections (found with the `depth:` log). In a frozen frame on track02
-  (lap frame 1080), 93 of the 554 polygons drawn cover less than a pixel.
-- **10.4 Game logic and loading.** Profile the game's own work (about 4 ms a
+- **10.3 Game logic and loading.** Profile the game's own work (about 4 ms a
   frame in the track02 intro), plus:
   - Texture loading: `render_texture_create()` finds each texture's colours to
     store it paletted (stage 6), work that `image.c` throws away when it expands
@@ -189,6 +183,10 @@ on hardware, for true figures.
   - Sound: each voice parameter is one RPC to the IOP (about 50us); a race makes
     750–860 a second, 4% of the EE. ps2snd's `sceSdProcBatch` is a stub on the
     EE, so batching them needs our own IOP module or a patched ps2snd.
+
+Stage 10 changes nothing visible. Drawing less (a shorter draw distance) waits
+until stage 12: the progression should show the same picture drawn faster, and
+real hardware plus a VU1 renderer may leave it unnecessary. See stage 13.
 
 ### 11. Performance: VU0 macro mode
 After stage 9, so its figures come from hardware: PCSX2 times VU0 instructions,
@@ -210,6 +208,9 @@ exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
   and culling; the VU coding contest demos (harness by SCEA/SCEE staff, entries
   from SCEA's contests); VCL or openvcl to schedule the microcode.
 - Done when: a full race holds 60fps on real hardware with headroom to spare.
+- If it doesn't, the last resort is a shorter draw distance (see stage 13's
+  draw distance item): measured in PCSX2 at stage 10.2, cutting everything at
+  wipeout-rewrite's 64000 saved 1.2–2.7 ms a lap, with no fade (it pops in).
 
 ### 13. Our enhancements
 - **neGcon.** The original PS1 wipEout supported Namco's twist controller, and the
@@ -223,6 +224,16 @@ exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
     fits double-buffered 32-bit in 4 MB of VRAM: they'd need 16-bit buffers,
     half-height fields or a smaller rendered image, and the fill rate to match.
     800×600 VGA with 16-bit buffers is the likeliest of them.
+- **Draw distance and fade.** wipeout-rewrite draws to 64000 and fades vertex
+  alpha from 48000; the Dreamcast port cuts off hard at 64000–96000 per track
+  section (up to 256000 for some scenery), so things pop in. A fade at the end
+  of whatever distance is set (every GS primitive already blends, so it's a few
+  instructions a vertex), with sections and objects culled by their nearest
+  point instead of their centre, so big scenery fades in whole. Then the
+  distance as a video option: the Dreamcast's tuned distances by default,
+  shorter for speed. Screenshots (`tools/bench.sh shot N`) for each choice.
+  In a frozen frame on track02 (lap frame 1080), 93 of the 554 polygons drawn
+  cover less than a pixel.
   - PAL runs at 50fps; the physics already scale with frame time.
 
 ## Architecture decisions

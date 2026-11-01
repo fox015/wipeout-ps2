@@ -16,7 +16,7 @@ Read it before starting work on a stage.
   GS packets) are done: menus run at 60fps; in PCSX2 a lap of any circuit
   averages 93–119fps uncapped, with 0.9–5.4% of frames over budget
   (performance is stages 10–12).
-  Next up: stage 10.3 (draw distance and fade), then stage 9 (real hardware).
+  Next up: stage 10.3 (game logic and loading), then stage 9 (real hardware).
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
