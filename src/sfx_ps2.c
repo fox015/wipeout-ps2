@@ -17,6 +17,7 @@
 #include <libsd.h>
 #include <ps2snd.h>
 #include <audsrv.h>
+#include <sifrpc.h>
 
 #define QOA_IMPLEMENTATION
 #define QOA_NO_STDIO
@@ -28,6 +29,7 @@
 #include "system.h"
 #include "wipeout/sfx.h"
 #include "wipeout/game.h"
+#include "sfx_ps2.h"
 
 extern int sfx_from_menu;
 extern char *path_assets;
@@ -87,9 +89,61 @@ static voice_t voices[VOICES];
 static uint64_t voice_clock;
 static float unpause_sfx_volume;
 
-// Voice parameter calls to the IOP, logged once a second.
-static uint32_t stat_params;
+// Voice parameter changes, and the batches that carried them to the IOP,
+// logged once a second.
+static uint32_t stat_params, stat_batches;
 static float stat_next;
+
+// Per-frame commands (voice volumes and pitch, key on and off, reverb volume)
+// go to the IOP in batches: ps2snd's server runs libsd's sceSdProcBatch() on
+// them (ps2snd's EE library only has a stub for it). That's one RPC for up to
+// BATCH_MAX commands instead of a blocking RPC, about 50us, for each. The RPC
+// doesn't wait for the IOP; the server has a single receive buffer, so the
+// next batch, and any other ps2snd call, waits for it to finish first.
+#define BATCH_MAX 15 // the server's buffer is 128 bytes: a count, then 8 a command
+
+static SifRpcClientData_t batch_client;
+static struct {
+	uint32_t count;
+	sceSdBatch command[BATCH_MAX];
+} batch_sent __attribute__((aligned(64)));
+static sceSdBatch batch[BATCH_MAX];
+static int batch_len;
+
+static void batch_wait(void) {
+	while (sceSifCheckStatRpc(&batch_client)) {
+	}
+}
+
+static void batch_send(void) {
+	if (batch_len == 0) {
+		return;
+	}
+	batch_wait();
+	batch_sent.count = batch_len;
+	memcpy(batch_sent.command, batch, batch_len * sizeof(sceSdBatch));
+	sceSifCallRpc(&batch_client, PS2SND_ProcBatch, SIF_RPC_M_NOWAIT, &batch_sent,
+		sizeof(uint32_t) + batch_len * sizeof(sceSdBatch), NULL, 0, NULL, NULL);
+	batch_len = 0;
+	stat_batches++;
+}
+
+static void batch_add(uint16_t func, uint16_t entry, uint32_t value) {
+	if (batch_len == BATCH_MAX) {
+		batch_send();
+	}
+	batch[batch_len++] = (sceSdBatch){.func = func, .entry = entry, .value = value};
+}
+
+// Before calling ps2snd directly: everything queued has reached libsd.
+static void batch_sync(void) {
+	batch_send();
+	batch_wait();
+}
+
+void sfx_ps2_frame_end(void) {
+	batch_send();
+}
 
 // Music volume as the Dreamcast's stream volume, 0-255. The menu sets it;
 // sfx_music_pause() mutes with 0 until the next track starts.
@@ -99,16 +153,17 @@ void wav_volume(int volume) {
 
 static void set_param(int voice, uint16_t param, uint16_t value, uint16_t *sent) {
 	if (*sent != value) {
-		sceSdSetParam(SD_VOICE(CORE, voice) | param, value);
+		batch_add(SD_BATCH_SETPARAM, SD_VOICE(CORE, voice) | param, value);
 		*sent = value;
 		stat_params++;
 	}
 	float now = platform_now();
 	if (now >= stat_next) {
 		if (stat_params) {
-			printf("sfx: %u voice parameter calls in the last second\n", (unsigned)stat_params);
+			printf("sfx: %u voice parameter changes in %u batches in the last second\n",
+				(unsigned)stat_params, (unsigned)stat_batches);
 		}
-		stat_params = 0;
+		stat_params = stat_batches = 0;
 		stat_next = now + 1.0f;
 	}
 }
@@ -136,14 +191,16 @@ static void voice_update(int voice, sfx_t *sfx) {
 static void voice_start(int voice, sfx_t *sfx) {
 	voices[voice].started = ++voice_clock;
 	sfx->data.voice = voice;
-	sceSdSetAddr(SD_VOICE(CORE, voice) | SD_VADDR_SSA, sources[sfx->source].addr);
+	batch_add(SD_BATCH_SETADDR, SD_VOICE(CORE, voice) | SD_VADDR_SSA, sources[sfx->source].addr);
 	voice_update(voice, sfx);
-	sceSdSetSwitch(CORE | SD_SWITCH_KON, 1 << voice);
+	batch_add(SD_BATCH_SETSWITCH, CORE | SD_SWITCH_KON, 1 << voice);
 }
 
 // A voice that isn't a reserved loop: one that has finished, or else the
 // one-shot that started longest ago.
 static int voice_alloc_oneshot(void) {
+	// Key ons still queued would leave their voices marked as ended.
+	batch_sync();
 	uint32_t ended = sceSdGetSwitch(CORE | SD_SWITCH_ENDX);
 	int oldest = -1;
 	for (int i = 0; i < VOICES; i++) {
@@ -179,6 +236,7 @@ static void source_set_looped(source_t *s) {
 	uint32_t offset = s->end_addr - SPU_SAMPLES_ADDR;
 	samples[offset + 1] |= BLOCK_LOOP_REPEAT;
 	uint32_t from = offset & ~63;
+	batch_sync();
 	FlushCache(0);
 	sndLoadSample(samples + from, SPU_SAMPLES_ADDR + from, 64);
 	s->looped = 1;
@@ -186,8 +244,8 @@ static void source_set_looped(source_t *s) {
 
 static void reverb_set_depth(uint16_t depth) {
 	if (depth != reverb_sent) {
-		sceSdSetParam(CORE | SD_PARAM_EVOLL, depth);
-		sceSdSetParam(CORE | SD_PARAM_EVOLR, depth);
+		batch_add(SD_BATCH_SETPARAM, CORE | SD_PARAM_EVOLL, depth);
+		batch_add(SD_BATCH_SETPARAM, CORE | SD_PARAM_EVOLR, depth);
 		reverb_sent = depth;
 	}
 }
@@ -217,6 +275,8 @@ void sfx_load(void) {
 	// audsrv_init() initialises it again and starts the music stream into
 	// core 1. Our settings go on top of that.
 	sceSdInit(0);
+	while (sceSifBindRpc(&batch_client, BINDID_PS2SND, 0) < 0 || !batch_client.server) {
+	}
 	audsrv_init();
 	sceSdSetParam(CORE | SD_PARAM_MVOLL, 0x3fff);
 	sceSdSetParam(CORE | SD_PARAM_MVOLR, 0x3fff);
@@ -236,6 +296,7 @@ void sfx_load(void) {
 	sceSdSetSwitch(CORE | SD_SWITCH_VMIXEL, 0xffffff);
 	sceSdSetSwitch(CORE | SD_SWITCH_VMIXER, 0xffffff);
 	reverb_set_depth(0);
+	batch_sync();
 	printf("sfx: reverb work area 0x%x-0x%x, mixer 0x%x\n",
 		(unsigned)sceSdGetAddr(CORE | SD_ADDR_ESA), (unsigned)sceSdGetAddr(CORE | SD_ADDR_EEA),
 		(unsigned)sceSdGetParam(CORE | SD_PARAM_MMIX));
@@ -297,7 +358,7 @@ void sfx_reset(void) {
 		if (flags_is(sfx->flags, SFX_LOOP)) {
 			int voice = sfx->data.voice;
 			if (voice >= 0) {
-				sceSdSetSwitch(CORE | SD_SWITCH_KOFF, 1 << voice);
+				batch_add(SD_BATCH_SETSWITCH, CORE | SD_SWITCH_KOFF, 1 << voice);
 				voices[voice].owner = NULL;
 			}
 			sfx->data.voice = -1;

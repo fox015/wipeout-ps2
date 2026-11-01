@@ -15,6 +15,7 @@
 #include "pad_ps2.h"
 #include "iop_ps2.h"
 #include "bench_ps2.h"
+#include "sfx_ps2.h"
 
 char *path_assets = "host:";
 char *path_userdata = "host:wipeout/";
@@ -129,6 +130,7 @@ int main(int argc, char *argv[]) {
 		system_update();
 		bench_update();
 #endif
+		sfx_ps2_frame_end();
 		frames++;
 		float now = platform_now();
 		if (now >= next_report) {
