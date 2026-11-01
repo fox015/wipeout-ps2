@@ -12,7 +12,7 @@ Read it before starting work on a stage.
 - Stages 0–8 are done. In PCSX2 the pad drives the game from the title screen
   through the menus into a race, fully textured and blended, with sound effects,
   music and tunnel reverb, and settings and records save to the memory card.
-  Menus run at 60fps, races at 30–60fps (performance is stage 10).
+  Menus run at 60fps, races at 30–60fps (performance is stages 10–12).
   Next up: stage 9 (real hardware).
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
@@ -200,7 +200,7 @@ Read it before starting work on a stage.
 ## Other local reference material (read for ideas, never copy into the repo)
 - `~/misc/dell linux backup/home/fox/ps2linux/ps2backup/`:
   - `ps2gl/vu1/`: Sony's (SCEA) open-source GL layer, with production VU1 renderers
-    including clipping and culling (`clip_cull.i`). Best reference for stage 10.
+    including clipping and culling (`clip_cull.i`). Best reference for stage 12.
   - `vu_coding_contest_2003_*`: VU1 demos. The harness and macros are by SCEA/SCEE
     staff, `previous_demos` has entries from SCEA's developer-conference contests,
     the 2003 entries are amateur. One file is marked SCEI CONFIDENTIAL.
@@ -208,7 +208,8 @@ Read it before starting work on a stage.
   - `sps2dev-0.4.0`: PS2 Linux direct-hardware kit. Concepts carry over, the API doesn't.
 - `~/misc/dell linux backup/home/fox/Downloads/`: `final-gdc2002-clippingps2.pdf`
   (PS2 clipping, for stage 5) and `PS2Optimisations.pdf` (stage 10).
-- `~/Development/ps2/3dmod/`: the user's own 2004 PS2 Linux code (DMA, pad, textures, VU1 in VCL).
+- `~/Development/ps2/3dmod/`: the user's 2004 PS2 Linux experiments (DMA, pad, textures,
+  a little VU1 in VCL). Dabbling, not a reference: for VU code use ps2gl and the contest demos.
 - `~/Development/ps2/playstation2-linux.com.7z`: 1.7 GB archive of the PS2 Linux
   community site. Not yet inspected (needs 7z).
 

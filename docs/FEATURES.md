@@ -33,7 +33,7 @@ PS1 features missing from the leaked PC source, brought back by a later port.
 | Reverb in tunnels | Missing upstream. On PS2 since stage 7: the SPU2's hardware reverb, on sound effects and music, where a track section has more than 4 faces |
 | Intro video | The PS1 used STR video; the rewrite plays it as MPEG-1 (pl_mpeg). Not in this port; the PS2's IPU decodes MPEG in hardware |
 | End-of-race animations | Missing from the leaked source and upstream |
-| neGcon controller | The PS1 game supported it; the rewrite dropped the code. Planned (stage 11) |
+| neGcon controller | The PS1 game supported it; the rewrite dropped the code. Planned (stage 13) |
 
 ## wipeout-rewrite
 
@@ -71,7 +71,7 @@ PS1 features missing from the leaked PC source, brought back by a later port.
 
 ## Ours
 
-Planned, not done yet (stage 11 in `ROADMAP.md`).
+Planned, not done yet (stage 13 in `ROADMAP.md`).
 
 | Feature | Notes |
 |---|---|
