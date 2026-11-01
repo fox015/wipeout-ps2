@@ -491,7 +491,7 @@ void sfx_set_position(sfx_t *sfx, vec3_t pos, vec3_t vel, float volume) {
 // file reading, decoding and audsrv calls, so the game never waits on them.
 
 #define MUSIC_READ_SIZE (64 * 1024)
-#define MUSIC_CHUNK_FRAMES 1024 // stereo sample pairs per audsrv call, 23ms
+#define MUSIC_CHUNK_FRAMES 1020 // stereo sample pairs per audsrv call, 23ms: 51 QOA slices
 
 static volatile uint32_t music_track_index = -1;
 static volatile sfx_music_mode_t music_mode = SFX_MUSIC_RANDOM;
@@ -500,7 +500,7 @@ static volatile int music_skip;      // end this track as if it finished
 static int music_start_sema = -1;
 
 static uint8_t music_read_buf[MUSIC_READ_SIZE] __attribute__((aligned(64)));
-static short music_pcm[QOA_FRAME_LEN * 2] __attribute__((aligned(64)));
+static short music_pcm[MUSIC_CHUNK_FRAMES * 2] __attribute__((aligned(64)));
 static uint8_t music_thread_stack[16 * 1024] __attribute__((aligned(16)));
 
 static __attribute__((unused)) bool music_track_recent(uint32_t index) {
@@ -541,6 +541,81 @@ static void music_pick_next(void) {
 }
 
 // Plays one track until it ends or another is asked for.
+// A QOA frame (5120 samples, 116 ms) took about 4.6 ms to decode in PCSX2,
+// all at once, and the music thread runs one priority above the game, so
+// every seventh frame or so went over budget. Decoding a chunk at a time, just
+// before audsrv needs it, spreads the same work over the frames that play it.
+// These do what qoa_decode_frame() does, in pieces, with qoa.h's own LMS
+// predictor and tables.
+typedef struct {
+	const unsigned char *bytes;
+	unsigned int p;       // the next slice
+	unsigned int samples; // per channel, in this frame
+	unsigned int decoded; // per channel, so far
+} music_frame_t;
+
+// Read a frame's header and LMS state. Returns the frame's size in bytes, or
+// 0 if there's no valid frame (the end of the track).
+static unsigned int music_frame_begin(music_frame_t *fr, const unsigned char *bytes, unsigned int size,
+		qoa_desc *qoa) {
+	if (size < 8 + QOA_LMS_LEN * 4 * qoa->channels) {
+		return 0;
+	}
+	unsigned int p = 0;
+	qoa_uint64_t frame_header = qoa_read_u64(bytes, &p);
+	unsigned int channels   = (frame_header >> 56) & 0x0000ff;
+	unsigned int samplerate = (frame_header >> 32) & 0xffffff;
+	unsigned int samples    = (frame_header >> 16) & 0x00ffff;
+	unsigned int frame_size = (frame_header      ) & 0x00ffff;
+	unsigned int num_slices = (frame_size - 8 - QOA_LMS_LEN * 4 * channels) / 8;
+	if (
+		channels != qoa->channels || samplerate != qoa->samplerate || frame_size > size ||
+		samples == 0 || samples * channels > num_slices * QOA_SLICE_LEN
+	) {
+		return 0;
+	}
+	for (unsigned int c = 0; c < channels; c++) {
+		qoa_uint64_t history = qoa_read_u64(bytes, &p);
+		qoa_uint64_t weights = qoa_read_u64(bytes, &p);
+		for (int i = 0; i < QOA_LMS_LEN; i++) {
+			qoa->lms[c].history[i] = (signed short)(history >> 48);
+			history <<= 16;
+			qoa->lms[c].weights[i] = (signed short)(weights >> 48);
+			weights <<= 16;
+		}
+	}
+	*fr = (music_frame_t){.bytes = bytes, .p = p, .samples = samples, .decoded = 0};
+	return frame_size;
+}
+
+// Decode the frame's next max samples per channel (a multiple of the slice
+// length) into pcm, interleaved. Returns how many it decoded.
+static unsigned int music_frame_decode(music_frame_t *fr, qoa_desc *qoa, short *pcm, unsigned int max) {
+	unsigned int channels = qoa->channels;
+	unsigned int start = fr->decoded;
+	unsigned int end = min(start + max, fr->samples);
+	for (unsigned int sample_index = start; sample_index < end; sample_index += QOA_SLICE_LEN) {
+		unsigned int slice_len = min(QOA_SLICE_LEN, fr->samples - sample_index);
+		for (unsigned int c = 0; c < channels; c++) {
+			qoa_uint64_t slice = qoa_read_u64(fr->bytes, &fr->p);
+			int scalefactor = (slice >> 60) & 0xf;
+			slice <<= 4;
+			short *out = pcm + (sample_index - start) * channels + c;
+			for (unsigned int i = 0; i < slice_len; i++) {
+				int predicted = qoa_lms_predict(&qoa->lms[c]);
+				int quantized = (slice >> 61) & 0x7;
+				int dequantized = qoa_dequant_tab[scalefactor][quantized];
+				int reconstructed = qoa_clamp_s16(predicted + dequantized);
+				out[i * channels] = reconstructed;
+				slice <<= 3;
+				qoa_lms_update(&qoa->lms[c], reconstructed, dequantized);
+			}
+		}
+	}
+	fr->decoded = end;
+	return end - start;
+}
+
 static void music_play_track(uint32_t index) {
 	// The game's paths are the Dreamcast's .adpcm files; ours are .qoa.
 	char path[64];
@@ -576,24 +651,24 @@ static void music_play_track(uint32_t index) {
 			have += fread(music_read_buf + have, 1, MUSIC_READ_SIZE - have, f);
 		}
 
-		unsigned int frame_len;
-		uint32_t used = qoa_decode_frame(music_read_buf + pos, have - pos, &qoa, music_pcm, &frame_len);
-		if (!used || !frame_len) {
+		music_frame_t frame;
+		uint32_t used = music_frame_begin(&frame, music_read_buf + pos, have - pos, &qoa);
+		if (!used) {
 			break; // end of the track
 		}
 		pos += used;
 
-		for (uint32_t done = 0; done < frame_len && !music_interrupt; done += MUSIC_CHUNK_FRAMES) {
+		while (frame.decoded < frame.samples && !music_interrupt) {
 			// audsrv's volume is 0-100.
 			int volume = music_volume * 100 / 255;
 			if (volume != volume_sent) {
 				audsrv_set_volume(volume);
 				volume_sent = volume;
 			}
-			uint32_t frames = min(MUSIC_CHUNK_FRAMES, frame_len - done);
+			uint32_t frames = music_frame_decode(&frame, &qoa, music_pcm, MUSIC_CHUNK_FRAMES);
 			int bytes = frames * 2 * sizeof(short);
 			audsrv_wait_audio(bytes);
-			audsrv_play_audio((char *)(music_pcm + done * 2), bytes);
+			audsrv_play_audio((char *)music_pcm, bytes);
 		}
 	}
 	fclose(f);
