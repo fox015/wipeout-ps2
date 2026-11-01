@@ -549,16 +549,6 @@ static void draw_projected(int n, const float *pos, int pos_stride, const float 
 	}
 
 	int textured = is_textured(texture_index);
-	gs_vertex_t gv[CLIP_MAX];
-	for (int i = 0; i < n; i++) {
-		const float *t = uv + i * uv_stride;
-		float z = rw[i] * Z_SCALE;
-		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
-		gv[i].rgbaq = rgbaq_from_argb(argb[i * argb_stride], textured, rw[i]);
-		gv[i].uv = GS_SET_ST(float_bits(t[0] * rw[i]), float_bits(t[1] * rw[i]));
-		gv[i].xyz = GS_SET_XYZ((int)sx[i], (int)sy[i], iz);
-	}
-
 	sync_depth_state();
 	sync_blend_state();
 	if (textured) {
@@ -566,7 +556,18 @@ static void draw_projected(int n, const float *pos, int pos_stride, const float 
 	}
 
 	// One triangle fan from vertex 0: a single PRIM write for the polygon.
-	gs_draw(GS_SET_PRIM(GS_PRIM_PRIM_TRIFAN, 1, textured, 0, 1, 0, 0, 0, 0), gv, n);
+	// Its vertices are written straight into the GS packet.
+	u64 *d = gs_prim(GS_SET_PRIM(GS_PRIM_PRIM_TRIFAN, 1, textured, 0, 1, 0, 0, 0, 0), n);
+	for (int i = 0; i < n; i++) {
+		float z = rw[i] * Z_SCALE;
+		uint32_t iz = z > 65535.0f ? 65535 : (uint32_t)z;
+		*d++ = rgbaq_from_argb(argb[i * argb_stride], textured, rw[i]);
+		if (textured) {
+			const float *t = uv + i * uv_stride;
+			*d++ = GS_SET_ST(float_bits(t[0] * rw[i]), float_bits(t[1] * rw[i]));
+		}
+		*d++ = GS_SET_XYZ((int)sx[i], (int)sy[i], iz);
+	}
 	prof.triangles += n - 2;
 }
 

@@ -75,11 +75,10 @@ static inline u64 *add_data(int count) {
 	return data;
 }
 
-// Queue a primitive and return where its n vertices' register values go.
 // A tag lists at most 16 registers: PRIM and up to 5 textured vertices (all
 // the game's own polygons) fit in one tag, written once. Larger polygons,
 // from the clipper, write PRIM in a tag of its own and loop over the vertices.
-static u64 *gs_prim(u64 prim, int n) {
+u64 *gs_prim(u64 prim, int n) {
 	int textured = (prim & PRIM_TME) != 0;
 	u64 uv_reg = (prim & PRIM_FST) ? GIF_REG_UV : GIF_REG_ST;
 	int per_vertex = textured ? 3 : 2;
