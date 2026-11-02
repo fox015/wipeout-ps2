@@ -26,8 +26,8 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 6 | Textures and blending ✅ | The game looks right |
 | 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
-| 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
-| 10 | Performance: the C path (10.1 ✅, 10.2 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.3 |
+| 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from its internal HDD |
+| 10 | Performance: the C path ✅ (10.1–10.3) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.3 |
 | 11 | Performance: VU0 macro mode | Vertex maths on VU0, measured on real hardware |
 | 12 | Performance: VU1 renderer | Transform, clip and packets on VU1 (PATH1); 60fps with headroom on real hardware in a full race |
 | 13 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
@@ -110,7 +110,8 @@ Done in PCSX2, heard by the user: sound effects, music and tunnel reverb.
   which the SPU2 plays as it is, so it's uploaded to sound RAM once and each
   effect is a hardware voice (ps2snd → libsd). audsrv has no per-voice pitch.
 - Music: the QOA files are read from the host as they play, decoded on the EE
-  by a thread and streamed to audsrv as PCM.
+  by a thread and streamed to audsrv as PCM. (Replaced in stage 10.3: the IOP
+  streams SPU2 ADPCM, and audsrv is gone.)
 - Reverb in tunnels, as on the PS1 (missing in wipeout-rewrite): the SPU2's
   hardware Hall reverb, faded in where the camera's track section has more than
   4 faces. It takes the music too.
@@ -178,15 +179,28 @@ on hardware, for true figures.
   code made `draw_vs()`'s register saves bigger. A lap now averages 93–119fps
   uncapped across the circuits, with 0.9–5.4% of frames over budget. Real
   hardware decides whether the smaller packets pay.
-- **10.3 Game logic and loading.** Profile the game's own work (about 4 ms a
-  frame in the track02 intro), plus:
-  - Texture loading: `render_texture_create()` finds each texture's colours to
-    store it paletted (stage 6), work that `image.c` throws away when it expands
-    the PS1's indices to 16-bit. Measure load times; if it matters, a paletted
-    create call fed from `image.c` (or a precomputed table) skips it.
-  - Sound: each voice parameter is one RPC to the IOP (about 50us); a race makes
-    750–860 a second, 4% of the EE. ps2snd's `sceSdProcBatch` is a stub on the
-    EE, so batching them needs our own IOP module or a patched ps2snd.
+- **10.3 Game logic and loading.** The game's own work, profiled: in a
+  track02 lap, the sound commands (one blocking RPC to the IOP each, about
+  50us, 750–860 a second) and the music decode (4.6 ms in one burst per QOA
+  frame, behind nearly every frame over budget) were the costs worth cutting.
+  - Sound commands are queued and sent to ps2snd's IOP server as batches
+    (`PS2SND_ProcBatch`, which its IOP side already handles) at frame end,
+    without waiting.
+  - Music is SPU2 ADPCM (`tools/convert_music.sh` converts the QOA files,
+    30–35 dB SNR against them), streamed by our own IOP module
+    (`iop/music/`) on two core 0 voices: no music work on the EE at all.
+    ps2snd's own streaming did the same but leaks a thread per track.
+  - Sprites set their own UVs (they had used whatever `vs[]` last held).
+  - Texture loading, measured: a race loads in 344–425 ms in PCSX2, of which
+    `render_texture_create()` is 99–115 ms, LZSS 85–103, reading files 82–114
+    and TIM decoding 12–15. Not worth changing upstream `image.c` for now;
+    measure again on hardware with the data on the HDD (stage 9).
+  - Tried and set aside: an object path that skips `vs[]` (no gain).
+  Result in PCSX2, against 10.2: each lap 1.0–1.4 ms faster (track02 8.38 to
+  7.32 ms, 119 to 137fps uncapped); across the circuits a lap averages
+  103–137fps uncapped, with 0.0–0.4% of frames over budget (was 0.9–5.4%).
+  Intros are 0.4–0.9 ms faster; track08's is still the heaviest (15.7 ms,
+  39% of frames over).
 
 Stage 10 changes nothing visible. Drawing less (a shorter draw distance) waits
 until stage 12: the progression should show the same picture drawn faster, and

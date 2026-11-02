@@ -12,17 +12,19 @@ Read it before starting work on a stage.
 - Stages 0–8 are done. In PCSX2 the pad drives the game from the title screen
   through the menus into a race, fully textured and blended, with sound effects,
   music and tunnel reverb, and settings and records save to the memory card.
-  Stages 10.1 (profiling and cutting the renderer's work) and 10.2 (REGLIST
-  GS packets) are done: menus run at 60fps; in PCSX2 a lap of any circuit
-  averages 93–119fps uncapped, with 0.9–5.4% of frames over budget
+  Stages 10.1 (profiling and cutting the renderer's work), 10.2 (REGLIST
+  GS packets) and 10.3 (game logic: batched sound commands, music streamed
+  by the IOP) are done: menus run at 60fps; in PCSX2 a lap of any circuit
+  averages 103–137fps uncapped, with 0.0–0.4% of frames over budget
   (performance is stages 10–12).
-  Next up: stage 10.3 (game logic and loading), then stage 9 (real hardware).
+  Next up: stage 9 (real hardware, game data on the internal HDD).
 - Not yet run on real hardware (needs ps2link, stage 9).
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
 - Game data is not in the repo. It's the PS1 data from phoboslab's wipeout-rewrite
   data zip, unzipped by the user into the gitignored `wipeout/` folder in the repo
-  (`wipeout/common`, `wipeout/textures`, `wipeout/track01`…, music as QOA).
+  (`wipeout/common`, `wipeout/textures`, `wipeout/track01`…, music as QOA,
+  plus the `.spu` music the user makes with `tools/convert_music.sh`).
   PCSX2's `host:` root is the folder the `.elf` is in, so the game reads it as
   `host:wipeout/...`. Never download or extract game data yourself.
 - The controls page's 3D model of a Dreamcast pad (`dcpad.bin`) is Dreamcast-only
@@ -101,19 +103,29 @@ Read it before starting work on a stage.
   renderer uses. Boost/item pads have PS1-scale colours (128 is 1.0, as in
   wipeout-rewrite), which the GS's modulate does natively: they're drawn unhalved
   in one pass, where the Dreamcast drew them twice with blending.
-- PS2 sound (`sfx_ps2.c`, IOP modules loaded from the ELF by `iop_ps2.c`):
+- PS2 sound (`sfx_ps2.c`, IOP modules loaded from the ELF by `iop_ps2.c`:
+  libsd, ps2snd, iomanX and our own `iop/music/`):
   - Sound effects: `wipeout.vb` (PS1 ADPCM) goes into sound RAM once; each effect
-    is one of core 1's 24 hardware voices, driven through ps2snd (each call is an
-    RPC, about 50us). Loops patch the sample's last block to repeat.
-  - Music: a thread one priority above the game reads `wipeout/music/*.qoa` from
-    the host, decodes it (`qoa.h`, unchanged from upstream) and feeds audsrv. The
-    game's `.adpcm` paths become `.qoa`. Only that thread calls audsrv.
+    is one of core 1's 24 hardware voices. Voice commands are queued and sent
+    to ps2snd's IOP server as one batch an RPC (`PS2SND_ProcBatch`, at most 15
+    commands) at frame end, without waiting; only one batch is in flight.
+    Calls that need an answer (allocating a voice, reading an address) flush
+    the queue first. Loops patch the sample's last block to repeat.
+  - Music: streamed by our IOP module (`iop/music/music.c`, built into the ELF
+    as `music_irx`) on core 0's voices 0 and 1, so the EE does no music work
+    beyond starting tracks and setting the volume (one RPC each; it asks every
+    30 frames whether the track ended). The files are SPU2 ADPCM `.spu`, made
+    from the QOA ones by `tools/convert_music.sh` into the gitignored
+    `wipeout/music/`; the game's `.adpcm` paths become `.spu`. The module reads
+    them through iomanX (so the HDD's `pfs0:` will work too) into two halves of
+    a buffer per channel, refilled on the SPU2 interrupt, uploaded on SPU2 DMA
+    channel 1 (ps2snd uses channel 0). Core 1 mixes core 0 in (MMIX), dry and
+    into the reverb.
   - Reverb: core 1's Hall effect, faded in by `sfx_set_reverb()`, which `race.c`
     calls each frame (sections with more than 4 faces, as on the PS1).
-  - Gotchas: every libsd init (ps2snd's `sceSdInit()`, `audsrv_init()`) resets
-    all voices, volumes and transfers, so the order is ps2snd, audsrv, then our
-    settings. audsrv zeroes core 0's master volume on every volume change, which
-    is why effects are on core 1.
+  - Gotcha: a libsd init (ps2snd's `sceSdInit()`) resets all voices, volumes,
+    transfers and the SPU2 interrupt handler, so our settings come after it and
+    the music module sets its handler with every track.
 - PS2 saves (`memcard_ps2.c`): `platform_load_userdata()`/`platform_store_userdata()`
   use libmc on the card in slot 1 (BIOS MCMAN/MCSERV, loaded by `iop_ps2.c`),
   folder `/WIPEOUT-PS2`. It also gets `icon.sys` and `icon.ico`, written when
