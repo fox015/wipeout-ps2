@@ -6,8 +6,10 @@
 // own pitch, volume and pan, as on the PS1. Reverb is core 1's hardware
 // effect, faded in and out for tunnels; it takes the music too.
 //
-// Music is QOA, read from the host as it plays (122 MB doesn't fit in RAM),
-// decoded on the EE and streamed to audsrv as 16-bit PCM by its own thread.
+// Music is SPU2 ADPCM (.spu files, made from the QOA tracks by
+// tools/convert_music.sh), streamed by our IOP module (iop/music/): the IOP
+// reads the file and the SPU2 decodes it, so the EE only starts tracks and
+// sets the volume.
 
 #include <stdio.h>
 #include <string.h>
@@ -16,11 +18,7 @@
 #include <timer.h>
 #include <libsd.h>
 #include <ps2snd.h>
-#include <audsrv.h>
-
-#define QOA_IMPLEMENTATION
-#define QOA_NO_STDIO
-#include "qoa.h"
+#include <sifrpc.h>
 
 #include "utils.h"
 #include "mem.h"
@@ -28,13 +26,13 @@
 #include "system.h"
 #include "wipeout/sfx.h"
 #include "wipeout/game.h"
+#include "sfx_ps2.h"
 
 extern int sfx_from_menu;
 extern char *path_assets;
-extern void *_gp;
 
-static volatile int music_volume;
-static void music_init(void);
+static int music_volume;
+static void music_init(uint32_t spu_addr);
 
 // Recently played music, so random play avoids repeats. The menus use it too.
 volatile uint32_t last_five_tracks[5] = {-1, -1, -1, -1, -1};
@@ -42,9 +40,8 @@ volatile uint32_t last_five_tracks[5] = {-1, -1, -1, -1, -1};
 // Sound RAM: below 0x5000 is the cores' input buffers; the samples go after.
 #define SPU_SAMPLES_ADDR 0x5010
 
-// Sound effects use core 1's 24 voices. audsrv mutes core 0 (its master
-// volume goes to 0 whenever the music volume changes) and streams the music
-// into core 1, whose voices it only uses for its own ADPCM playback (unused).
+// Sound effects use core 1's 24 voices; the music streams through core 0
+// (see music_init()).
 #define VOICES 24
 #define CORE 1
 
@@ -87,9 +84,64 @@ static voice_t voices[VOICES];
 static uint64_t voice_clock;
 static float unpause_sfx_volume;
 
-// Voice parameter calls to the IOP, logged once a second.
-static uint32_t stat_params;
+// Voice parameter changes, and the batches that carried them to the IOP,
+// logged once a second.
+static uint32_t stat_params, stat_batches;
 static float stat_next;
+
+// Per-frame commands (voice volumes and pitch, key on and off, reverb volume)
+// go to the IOP in batches: ps2snd's server runs libsd's sceSdProcBatch() on
+// them (ps2snd's EE library only has a stub for it). That's one RPC for up to
+// BATCH_MAX commands instead of a blocking RPC, about 50us, for each. The RPC
+// doesn't wait for the IOP; the server has a single receive buffer, so the
+// next batch, and any other ps2snd call, waits for it to finish first.
+#define BATCH_MAX 15 // the server's buffer is 128 bytes: a count, then 8 a command
+
+static SifRpcClientData_t batch_client;
+static struct {
+	uint32_t count;
+	sceSdBatch command[BATCH_MAX];
+} batch_sent __attribute__((aligned(64)));
+static sceSdBatch batch[BATCH_MAX];
+static int batch_len;
+
+static void batch_wait(void) {
+	while (sceSifCheckStatRpc(&batch_client)) {
+	}
+}
+
+static void batch_send(void) {
+	if (batch_len == 0) {
+		return;
+	}
+	batch_wait();
+	batch_sent.count = batch_len;
+	memcpy(batch_sent.command, batch, batch_len * sizeof(sceSdBatch));
+	sceSifCallRpc(&batch_client, PS2SND_ProcBatch, SIF_RPC_M_NOWAIT, &batch_sent,
+		sizeof(uint32_t) + batch_len * sizeof(sceSdBatch), NULL, 0, NULL, NULL);
+	batch_len = 0;
+	stat_batches++;
+}
+
+static void batch_add(uint16_t func, uint16_t entry, uint32_t value) {
+	if (batch_len == BATCH_MAX) {
+		batch_send();
+	}
+	batch[batch_len++] = (sceSdBatch){.func = func, .entry = entry, .value = value};
+}
+
+// Before calling ps2snd directly: everything queued has reached libsd.
+static void batch_sync(void) {
+	batch_send();
+	batch_wait();
+}
+
+static void music_update(void);
+
+void sfx_ps2_frame_end(void) {
+	music_update();
+	batch_send();
+}
 
 // Music volume as the Dreamcast's stream volume, 0-255. The menu sets it;
 // sfx_music_pause() mutes with 0 until the next track starts.
@@ -99,16 +151,17 @@ void wav_volume(int volume) {
 
 static void set_param(int voice, uint16_t param, uint16_t value, uint16_t *sent) {
 	if (*sent != value) {
-		sceSdSetParam(SD_VOICE(CORE, voice) | param, value);
+		batch_add(SD_BATCH_SETPARAM, SD_VOICE(CORE, voice) | param, value);
 		*sent = value;
 		stat_params++;
 	}
 	float now = platform_now();
 	if (now >= stat_next) {
 		if (stat_params) {
-			printf("sfx: %u voice parameter calls in the last second\n", (unsigned)stat_params);
+			printf("sfx: %u voice parameter changes in %u batches in the last second\n",
+				(unsigned)stat_params, (unsigned)stat_batches);
 		}
-		stat_params = 0;
+		stat_params = stat_batches = 0;
 		stat_next = now + 1.0f;
 	}
 }
@@ -136,14 +189,16 @@ static void voice_update(int voice, sfx_t *sfx) {
 static void voice_start(int voice, sfx_t *sfx) {
 	voices[voice].started = ++voice_clock;
 	sfx->data.voice = voice;
-	sceSdSetAddr(SD_VOICE(CORE, voice) | SD_VADDR_SSA, sources[sfx->source].addr);
+	batch_add(SD_BATCH_SETADDR, SD_VOICE(CORE, voice) | SD_VADDR_SSA, sources[sfx->source].addr);
 	voice_update(voice, sfx);
-	sceSdSetSwitch(CORE | SD_SWITCH_KON, 1 << voice);
+	batch_add(SD_BATCH_SETSWITCH, CORE | SD_SWITCH_KON, 1 << voice);
 }
 
 // A voice that isn't a reserved loop: one that has finished, or else the
 // one-shot that started longest ago.
 static int voice_alloc_oneshot(void) {
+	// Key ons still queued would leave their voices marked as ended.
+	batch_sync();
 	uint32_t ended = sceSdGetSwitch(CORE | SD_SWITCH_ENDX);
 	int oldest = -1;
 	for (int i = 0; i < VOICES; i++) {
@@ -179,6 +234,7 @@ static void source_set_looped(source_t *s) {
 	uint32_t offset = s->end_addr - SPU_SAMPLES_ADDR;
 	samples[offset + 1] |= BLOCK_LOOP_REPEAT;
 	uint32_t from = offset & ~63;
+	batch_sync();
 	FlushCache(0);
 	sndLoadSample(samples + from, SPU_SAMPLES_ADDR + from, 64);
 	s->looped = 1;
@@ -186,8 +242,8 @@ static void source_set_looped(source_t *s) {
 
 static void reverb_set_depth(uint16_t depth) {
 	if (depth != reverb_sent) {
-		sceSdSetParam(CORE | SD_PARAM_EVOLL, depth);
-		sceSdSetParam(CORE | SD_PARAM_EVOLR, depth);
+		batch_add(SD_BATCH_SETPARAM, CORE | SD_PARAM_EVOLL, depth);
+		batch_add(SD_BATCH_SETPARAM, CORE | SD_PARAM_EVOLR, depth);
 		reverb_sent = depth;
 	}
 }
@@ -212,12 +268,11 @@ void sfx_load(void) {
 		nodes[i].data.voice = -1;
 	}
 
-	// Each libsd init resets every voice, volume and transfer. ps2snd's
-	// sceSdInit() connects its RPC client and initialises libsd; then
-	// audsrv_init() initialises it again and starts the music stream into
-	// core 1. Our settings go on top of that.
+	// ps2snd's sceSdInit() connects its RPC client and initialises libsd,
+	// which resets every voice, volume and transfer. Our settings go on top.
 	sceSdInit(0);
-	audsrv_init();
+	while (sceSifBindRpc(&batch_client, BINDID_PS2SND, 0) < 0 || !batch_client.server) {
+	}
 	sceSdSetParam(CORE | SD_PARAM_MVOLL, 0x3fff);
 	sceSdSetParam(CORE | SD_PARAM_MVOLR, 0x3fff);
 	sceSdSetSwitch(CORE | SD_SWITCH_VMIXL, 0xffffff);
@@ -236,11 +291,10 @@ void sfx_load(void) {
 	sceSdSetSwitch(CORE | SD_SWITCH_VMIXEL, 0xffffff);
 	sceSdSetSwitch(CORE | SD_SWITCH_VMIXER, 0xffffff);
 	reverb_set_depth(0);
+	batch_sync();
 	printf("sfx: reverb work area 0x%x-0x%x, mixer 0x%x\n",
 		(unsigned)sceSdGetAddr(CORE | SD_ADDR_ESA), (unsigned)sceSdGetAddr(CORE | SD_ADDR_EEA),
 		(unsigned)sceSdGetParam(CORE | SD_PARAM_MMIX));
-
-	music_init();
 
 	uint32_t vb_size;
 	uint8_t *vb = platform_load_asset("wipeout/sound/wipeout.vb", &vb_size);
@@ -271,6 +325,7 @@ void sfx_load(void) {
 	mem_temp_free(vb);
 	FlushCache(0);
 	int sent = sndLoadSample(samples, SPU_SAMPLES_ADDR, vb_size);
+	music_init((SPU_SAMPLES_ADDR + vb_size + 63) & ~63);
 
 	// What a voice parameter costs: each is a call to the IOP.
 	u32 sec, usec;
@@ -297,7 +352,7 @@ void sfx_reset(void) {
 		if (flags_is(sfx->flags, SFX_LOOP)) {
 			int voice = sfx->data.voice;
 			if (voice >= 0) {
-				sceSdSetSwitch(CORE | SD_SWITCH_KOFF, 1 << voice);
+				batch_add(SD_BATCH_SETSWITCH, CORE | SD_SWITCH_KOFF, 1 << voice);
 				voices[voice].owner = NULL;
 			}
 			sfx->data.voice = -1;
@@ -426,23 +481,42 @@ void sfx_set_position(sfx_t *sfx, vec3_t pos, vec3_t vel, float volume) {
 	sfx_update_ex(sfx);
 }
 
-// Music. The main thread only sets these; the music thread does all the
-// file reading, decoding and audsrv calls, so the game never waits on them.
+// Music: iop/music/ streams a .spu file to core 0's voices 0 and 1, double-
+// buffered in sound RAM at music_spu_addr. Core 0 plays only the music; its
+// output is mixed into core 1, dry and into the reverb. The main loop starts
+// tracks and, every MUSIC_POLL_FRAMES, asks whether the track has ended, to
+// start the next one. The module answers that without waiting on its file
+// reads.
 
-#define MUSIC_READ_SIZE (64 * 1024)
-#define MUSIC_CHUNK_FRAMES 1024 // stereo sample pairs per audsrv call, 23ms
+#define MUSIC_RPC_ID 0x57504d55 // as iop/music/music.c
+enum {
+	MUSIC_OPEN = 1,
+	MUSIC_CLOSE,
+	MUSIC_VOLUME,
+	MUSIC_ENDED,
+};
+#define MUSIC_CHUNK_BLOCKS 1024 // as iop/music/music.c and tools/spu_music/spu_music.c
+#define MUSIC_POLL_FRAMES 30
+#define MUSIC_VOLUME_SCALE 0x3fff
 
-static volatile uint32_t music_track_index = -1;
-static volatile sfx_music_mode_t music_mode = SFX_MUSIC_RANDOM;
-static volatile int music_interrupt; // a new track was asked for
-static volatile int music_skip;      // end this track as if it finished
-static int music_start_sema = -1;
+static SifRpcClientData_t music_client;
+static uint32_t music_rpc_send[32] __attribute__((aligned(64)));
+static uint32_t music_rpc_reply[16] __attribute__((aligned(64)));
 
-static uint8_t music_read_buf[MUSIC_READ_SIZE] __attribute__((aligned(64)));
-static short music_pcm[QOA_FRAME_LEN * 2] __attribute__((aligned(64)));
-static uint8_t music_thread_stack[16 * 1024] __attribute__((aligned(16)));
+static uint32_t music_rpc(int function, int send_bytes) {
+	sceSifCallRpc(&music_client, function, 0, music_rpc_send, send_bytes, music_rpc_reply, 16, NULL, NULL);
+	return music_rpc_reply[0];
+}
 
-static __attribute__((unused)) bool music_track_recent(uint32_t index) {
+static uint32_t music_spu_addr; // 4 halves of MUSIC_CHUNK_BLOCKS blocks
+static uint32_t music_track_index = -1;
+static sfx_music_mode_t music_mode = SFX_MUSIC_RANDOM;
+static int music_requested; // a track to start at the end of the frame
+static int music_open;      // a track is playing
+static int music_volume_sent = -1;
+static int music_poll;
+
+static bool music_track_recent(uint32_t index) {
 	for (int i = 0; i < 5; i++) {
 		if (last_five_tracks[i] == index) {
 			return true;
@@ -463,8 +537,8 @@ static void music_pick_next(void) {
 			index = rand_int(0, len(def.music));
 		} while (music_track_recent(index));
 #else
-		// This thread runs on real time: a rand() here would shift the
-		// benchmark race's random numbers.
+		// A rand() here would shift the benchmark race's random numbers.
+		(void)music_track_recent;
 		index = (music_track_index + 1) % len(def.music);
 #endif
 		for (int i = 1; i < 5; i++) {
@@ -479,108 +553,70 @@ static void music_pick_next(void) {
 	// SFX_MUSIC_LOOP and SFX_MUSIC_PAUSED play the same track again.
 }
 
-// Plays one track until it ends or another is asked for.
-static void music_play_track(uint32_t index) {
-	// The game's paths are the Dreamcast's .adpcm files; ours are .qoa.
-	char path[64];
-	snprintf(path, sizeof(path), "%s%s", path_assets, def.music[index].path);
+static void music_start(uint32_t index) {
+	// The game's paths are the Dreamcast's .adpcm files; ours are .spu.
+	char *path = (char *)&music_rpc_send[1];
+	snprintf(path, sizeof(music_rpc_send) - 4, "%s%s", path_assets, def.music[index].path);
 	char *ext = strrchr(path, '.');
 	if (ext) {
-		strcpy(ext, ".qoa");
+		strcpy(ext, ".spu");
 	}
-
-	FILE *f = fopen(path, "rb");
-	if (!f) {
-		printf("music: could not open %s\n", path);
-		return;
-	}
-	printf("music: %s\n", path);
-
-	uint32_t have = fread(music_read_buf, 1, MUSIC_READ_SIZE, f);
-	qoa_desc qoa;
-	uint32_t pos = qoa_decode_header(music_read_buf, have, &qoa);
-	if (!pos || qoa.channels != 2) {
-		printf("music: %s is not stereo QOA\n", path);
-		fclose(f);
-		return;
-	}
-
-	int volume_sent = -1;
-	while (!music_interrupt && !music_skip) {
-		// Keep at least one whole frame in the buffer.
-		if (have - pos < QOA_FRAME_SIZE(2, QOA_SLICES_PER_FRAME)) {
-			memmove(music_read_buf, music_read_buf + pos, have - pos);
-			have -= pos;
-			pos = 0;
-			have += fread(music_read_buf + have, 1, MUSIC_READ_SIZE - have, f);
-		}
-
-		unsigned int frame_len;
-		uint32_t used = qoa_decode_frame(music_read_buf + pos, have - pos, &qoa, music_pcm, &frame_len);
-		if (!used || !frame_len) {
-			break; // end of the track
-		}
-		pos += used;
-
-		for (uint32_t done = 0; done < frame_len && !music_interrupt; done += MUSIC_CHUNK_FRAMES) {
-			// audsrv's volume is 0-100.
-			int volume = music_volume * 100 / 255;
-			if (volume != volume_sent) {
-				audsrv_set_volume(volume);
-				volume_sent = volume;
-			}
-			uint32_t frames = min(MUSIC_CHUNK_FRAMES, frame_len - done);
-			int bytes = frames * 2 * sizeof(short);
-			audsrv_wait_audio(bytes);
-			audsrv_play_audio((char *)(music_pcm + done * 2), bytes);
-		}
-	}
-	fclose(f);
+	music_rpc_send[0] = music_spu_addr;
+	music_volume = 192 * save.music_volume; // as the Dreamcast's wav_create()
+	music_volume_sent = -1;
+	int r = (int)music_rpc(MUSIC_OPEN, 4 + strlen(path) + 1);
+	music_open = r == 0;
+	printf(r == 0 ? "music: %s\n" : "music: could not play %s\n", path);
 }
 
-static void music_thread(void *arg) {
-	WaitSema(music_start_sema); // the first sfx_music_play()
-	while (1) {
-		music_interrupt = 0;
-		music_skip = 0;
-		music_volume = 192 * save.music_volume; // as the Dreamcast's wav_create()
-		music_play_track(music_track_index);
-		if (!music_interrupt) {
+// Once a frame, from sfx_ps2_frame_end().
+static void music_update(void) {
+	if (music_requested) {
+		music_requested = 0;
+		music_start(music_track_index);
+		return;
+	}
+	if (!music_open) {
+		return;
+	}
+	if (music_volume != music_volume_sent) {
+		music_rpc_send[0] = music_rpc_send[1] = music_volume * MUSIC_VOLUME_SCALE / 255;
+		music_rpc(MUSIC_VOLUME, 8);
+		music_volume_sent = music_volume;
+	}
+	if (++music_poll >= MUSIC_POLL_FRAMES) {
+		music_poll = 0;
+		if (music_rpc(MUSIC_ENDED, 0)) {
+			music_open = 0;
 			music_pick_next();
+			music_start(music_track_index);
 		}
 	}
 }
 
-static void music_init(void) {
-	audsrv_fmt_t fmt = {.freq = 44100, .bits = 16, .channels = 2};
-	audsrv_set_format(&fmt);
-	printf("music: audsrv ready, %d bytes of buffer\n", audsrv_available());
-
-	ee_sema_t sema = {.init_count = 0, .max_count = 1};
-	music_start_sema = CreateSema(&sema);
-
-	// One step above the game, so it runs whenever audsrv has room; it
-	// sleeps in audsrv_wait_audio() the rest of the time.
-	ee_thread_status_t status;
-	ReferThreadStatus(GetThreadId(), &status);
-	ee_thread_t thread = {
-		.func = music_thread,
-		.stack = music_thread_stack,
-		.stack_size = sizeof(music_thread_stack),
-		.gp_reg = &_gp,
-		.initial_priority = status.current_priority - 1,
-	};
-	StartThread(CreateThread(&thread), NULL);
+static void music_init(uint32_t spu_addr) {
+	music_spu_addr = spu_addr;
+	while (sceSifBindRpc(&music_client, MUSIC_RPC_ID, 0) < 0 || !music_client.server) {
+	}
+	// Core 0 plays only the music; its output goes into core 1, dry and into
+	// the reverb.
+	sceSdSetParam(0 | SD_PARAM_MVOLL, 0x3fff);
+	sceSdSetParam(0 | SD_PARAM_MVOLR, 0x3fff);
+	sceSdSetSwitch(0 | SD_SWITCH_VMIXL, 3);
+	sceSdSetSwitch(0 | SD_SWITCH_VMIXR, 3);
+	sceSdSetParam(CORE | SD_PARAM_MMIX, 0xfff);
+	printf("music: stream buffers at 0x%x-0x%x in sound RAM\n", (unsigned)spu_addr,
+		(unsigned)(spu_addr + 4 * MUSIC_CHUNK_BLOCKS * 16));
 }
 
 void sfx_music_next(void) {
-	music_skip = 1;
+	music_pick_next();
+	music_requested = 1;
 }
 
 void sfx_music_play(uint32_t index) {
 	music_track_index = index;
-	music_interrupt = 1;
-	SignalSema(music_start_sema);
+	music_requested = 1;
 }
 
 void sfx_music_mode(sfx_music_mode_t mode) {

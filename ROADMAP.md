@@ -26,8 +26,8 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 6 | Textures and blending ✅ | The game looks right |
 | 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
-| 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from USB or disc |
-| 10 | Performance: the C path (10.1 ✅, 10.2 ✅) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.4 |
+| 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from its internal HDD |
+| 10 | Performance: the C path ✅ (10.1–10.3) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.3 |
 | 11 | Performance: VU0 macro mode | Vertex maths on VU0, measured on real hardware |
 | 12 | Performance: VU1 renderer | Transform, clip and packets on VU1 (PATH1); 60fps with headroom on real hardware in a full race |
 | 13 | Our enhancements | neGcon support and a video options menu (see `docs/FEATURES.md`) |
@@ -110,7 +110,8 @@ Done in PCSX2, heard by the user: sound effects, music and tunnel reverb.
   which the SPU2 plays as it is, so it's uploaded to sound RAM once and each
   effect is a hardware voice (ps2snd → libsd). audsrv has no per-voice pitch.
 - Music: the QOA files are read from the host as they play, decoded on the EE
-  by a thread and streamed to audsrv as PCM.
+  by a thread and streamed to audsrv as PCM. (Replaced in stage 10.3: the IOP
+  streams SPU2 ADPCM, and audsrv is gone.)
 - Reverb in tunnels, as on the PS1 (missing in wipeout-rewrite): the SPU2's
   hardware Hall reverb, faded in where the camera's track section has more than
   4 faces. It takes the music too.
@@ -135,11 +136,15 @@ load at boot; a setting changed in the menus survived a reboot.
   hardware doesn't); the thin black band at the bottom in VGA mode under PCSX2.
 - Saves: on a real card, check save times (each libmc call waits) and the
   browser icon.
-- Sound: audsrv's buffer holds only 53ms, and music is read while levels load.
-  Listen for dropouts with the real data source (USB, disc or `host:`).
+- Sound: music streams from the IOP (stage 10.3), reading the file as it
+  plays, while levels load too. Listen for dropouts with the real data source.
 - ps2link + ps2client over the network for development.
-- Decide how a console finds the game data (it isn't redistributable): USB,
-  a disc image the user builds, or `host:`.
+- How a console finds the game data (it isn't redistributable): the user's
+  internal HDD, the plan. An APA-partitioned drive with a PFS filesystem, read
+  through ps2sdk's IOP modules (`ps2atad`, `ps2hdd`, `ps2fs`) as `pfs0:`, which
+  is an iomanX device: everything that opens game files, on the EE and the
+  IOP (the music stream), has to go through iomanX. USB or a disc image the
+  user builds are the alternatives; `host:` stays for development.
 - Output on the SDM-X53 via VGA.
 
 ### 10. Performance: the C path (PATH3)
@@ -174,21 +179,32 @@ on hardware, for true figures.
   code made `draw_vs()`'s register saves bigger. A lap now averages 93–119fps
   uncapped across the circuits, with 0.9–5.4% of frames over budget. Real
   hardware decides whether the smaller packets pay.
-- **10.3 Draw distance and fade.** wipeout-rewrite draws to 64000 and fades
-  vertex alpha from 48000; the Dreamcast port cuts off hard at up to 96000 per
-  section. Restore the fade and shorter distances, keeping longer ones only where
-  they're worth it. It changes the look, so the PR shows screenshots of the
-  worst sections (found with the `depth:` log). In a frozen frame on track02
-  (lap frame 1080), 93 of the 554 polygons drawn cover less than a pixel.
-- **10.4 Game logic and loading.** Profile the game's own work (about 4 ms a
-  frame in the track02 intro), plus:
-  - Texture loading: `render_texture_create()` finds each texture's colours to
-    store it paletted (stage 6), work that `image.c` throws away when it expands
-    the PS1's indices to 16-bit. Measure load times; if it matters, a paletted
-    create call fed from `image.c` (or a precomputed table) skips it.
-  - Sound: each voice parameter is one RPC to the IOP (about 50us); a race makes
-    750–860 a second, 4% of the EE. ps2snd's `sceSdProcBatch` is a stub on the
-    EE, so batching them needs our own IOP module or a patched ps2snd.
+- **10.3 Game logic and loading.** The game's own work, profiled: in a
+  track02 lap, the sound commands (one blocking RPC to the IOP each, about
+  50us, 750–860 a second) and the music decode (4.6 ms in one burst per QOA
+  frame, behind nearly every frame over budget) were the costs worth cutting.
+  - Sound commands are queued and sent to ps2snd's IOP server as batches
+    (`PS2SND_ProcBatch`, which its IOP side already handles) at frame end,
+    without waiting.
+  - Music is SPU2 ADPCM (`tools/convert_music.sh` converts the QOA files,
+    30–35 dB SNR against them), streamed by our own IOP module
+    (`iop/music/`) on two core 0 voices: no music work on the EE at all.
+    ps2snd's own streaming did the same but leaks a thread per track.
+  - Sprites set their own UVs (they had used whatever `vs[]` last held).
+  - Texture loading, measured: a race loads in 344–425 ms in PCSX2, of which
+    `render_texture_create()` is 99–115 ms, LZSS 85–103, reading files 82–114
+    and TIM decoding 12–15. Not worth changing upstream `image.c` for now;
+    measure again on hardware with the data on the HDD (stage 9).
+  - Tried and set aside: an object path that skips `vs[]` (no gain).
+  Result in PCSX2, against 10.2: each lap 1.0–1.4 ms faster (track02 8.38 to
+  7.32 ms, 119 to 137fps uncapped); across the circuits a lap averages
+  103–137fps uncapped, with 0.0–0.4% of frames over budget (was 0.9–5.4%).
+  Intros are 0.4–0.9 ms faster; track08's is still the heaviest (15.7 ms,
+  39% of frames over).
+
+Stage 10 changes nothing visible. Drawing less (a shorter draw distance) waits
+until stage 12: the progression should show the same picture drawn faster, and
+real hardware plus a VU1 renderer may leave it unnecessary. See stage 13.
 
 ### 11. Performance: VU0 macro mode
 After stage 9, so its figures come from hardware: PCSX2 times VU0 instructions,
@@ -210,8 +226,16 @@ exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
   and culling; the VU coding contest demos (harness by SCEA/SCEE staff, entries
   from SCEA's contests); VCL or openvcl to schedule the microcode.
 - Done when: a full race holds 60fps on real hardware with headroom to spare.
+- If it doesn't, the last resort is a shorter draw distance (see stage 13's
+  draw distance item): measured in PCSX2 at stage 10.2, cutting everything at
+  wipeout-rewrite's 64000 saved 1.2–2.7 ms a lap, with no fade (it pops in).
 
 ### 13. Our enhancements
+- **Music from the original CD audio.** The `.spu` music is converted from
+  wipeout-rewrite's QOA tracks (`tools/convert_music.sh`), one lossy format into
+  another (30–35 dB SNR against the QOA). Encoding from the user's own rip of
+  the original CD audio would avoid that loss: the converter would take WAV.
+  The user rips the discs; nothing is extracted here.
 - **neGcon.** The original PS1 wipEout supported Namco's twist controller, and the
   PS2's BIOS pad driver identifies it (libpad's `PAD_TYPE_NEJICON`). Map the twist
   to steering and the analog I, II and L buttons to thrust, fire and airbrake, and
@@ -223,6 +247,16 @@ exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
     fits double-buffered 32-bit in 4 MB of VRAM: they'd need 16-bit buffers,
     half-height fields or a smaller rendered image, and the fill rate to match.
     800×600 VGA with 16-bit buffers is the likeliest of them.
+- **Draw distance and fade.** wipeout-rewrite draws to 64000 and fades vertex
+  alpha from 48000; the Dreamcast port cuts off hard at 64000–96000 per track
+  section (up to 256000 for some scenery), so things pop in. A fade at the end
+  of whatever distance is set (every GS primitive already blends, so it's a few
+  instructions a vertex), with sections and objects culled by their nearest
+  point instead of their centre, so big scenery fades in whole. Then the
+  distance as a video option: the Dreamcast's tuned distances by default,
+  shorter for speed. Screenshots (`tools/bench.sh shot N`) for each choice.
+  In a frozen frame on track02 (lap frame 1080), 93 of the 554 polygons drawn
+  cover less than a pixel.
   - PAL runs at 50fps; the physics already scale with frame time.
 
 ## Architecture decisions
