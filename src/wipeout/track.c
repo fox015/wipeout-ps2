@@ -150,7 +150,10 @@ void track_load_faces(char *file_name, vec3_t *vertices) {
 	uint8_t *bytes = platform_load_asset(file_name, &size);
 
 	g.track.face_count = size / 20; // TRACK_FACE_DATA_SIZE
-	g.track.faces = mem_bump(sizeof(track_face_t) * g.track.face_count);
+	// track_face_t holds aligned(32) vertices, so gcc stores into it with 64-bit
+	// stores, which fault on real hardware at a 4-aligned mem_bump() address.
+	void *trackfaces = mem_bump((sizeof(track_face_t) * g.track.face_count) + 32);
+	g.track.faces = (track_face_t *)(((uintptr_t)trackfaces + 31) & ~31);
 	void *trackpvr = mem_bump((sizeof(render_vertex_t) * 4 * g.track.face_count) + 32);
 	g.track.apvr = (render_vertex_t *)(((uintptr_t)trackpvr + 31) & ~31);
 
