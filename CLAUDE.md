@@ -259,7 +259,18 @@ Read it before starting work on a stage.
   - `vcl-1.28`: VCL, the VU assembly optimiser (openvcl is the open successor).
   - `sps2dev-0.4.0`: PS2 Linux direct-hardware kit. Concepts carry over, the API doesn't.
 - `~/misc/dell linux backup/home/fox/Downloads/`: `final-gdc2002-clippingps2.pdf`
-  (PS2 clipping, for stage 5) and `PS2Optimisations.pdf` (stage 10).
+  (PS2 clipping, for stage 5) and `PS2Optimisations.pdf` (stage 10; `006.ppt`
+  is the same deck with speaker notes). Also `rgreen_procedural_renderinggdc2001.pdf`
+  (writing VU1 code), `TextureSwizzling.pdf` (faster PSMT4/PSMT8 uploads, unread)
+  and `ps2_normalmapping.pdf` (IO Interactive, unread). `nsce_presentation.ppt`
+  there is a Sony internal planning deck: confidential, don't use it.
+- `~/Development/ps2-talks/`: Ostler (SCEE), "The Primal Seas: Water on PS2",
+  SIGGRAPH 2003 (portal/octree visibility, geometry generated on VU1).
+- `~/scratch/psychonauts/notes/`: the user's Psychonauts PS2 investigation.
+  `FOR_WIPEOUT.md` is its summary for us (VU1 renderer lessons, GS waste,
+  emulator gotchas, and a list of every PS2 talk it found or looked for, with
+  links); `FINDINGS.md` is the detail. Its figures are from emulators, GS dumps
+  and save states, not hardware.
 - `~/Development/ps2/3dmod/`: the user's 2004 PS2 Linux experiments (DMA, pad, textures,
   a little VU1 in VCL). Dabbling, not a reference: for VU code use ps2gl and the contest demos.
 - `~/Development/ps2/playstation2-linux.com.7z`: 1.7 GB archive of the PS2 Linux
@@ -272,7 +283,11 @@ Local material (paths above) is read for ideas, never copied.
 1. **Sony's own engineers.** The hardware manuals; ps2gl and ps2stuff (SCEA,
    open-sourced; maintained as ps2dev/ps2gl and ps2dev/ps2stuff); VCL (SCEA);
    Colin Hughes' GDC 2002 "PlayStation 2 Clipping" and George Bain's AGDC 2002
-   "PS2 Programming Optimisations" (both SCEE); the VU contest harness (SCEE)
+   "PS2 Programming Optimisations" (both SCEE); Lionel Lemarié's "Reaching for
+   the Limits of PS2 Performance" (SCEE 2003, statistics from shipped games,
+   web copy at retrocdn.net); Robin Green's GDC 2001 "Procedural Rendering on
+   PlayStation 2" (SCEA); Dean & Breugelmans' "Texture Compression" (SCEE,
+   2001, on Scribd); the VU contest harness (SCEE)
    and the SCEA demos in `previous_demos` (`invite`, `slow_motion`, `tree`).
 2. **Proven open source, widely used.** ps2sdk and gsKit (we build on them);
    PCSX2's source (how the hardware behaves, and how VU timing is emulated);

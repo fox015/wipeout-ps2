@@ -146,6 +146,10 @@ load at boot; a setting changed in the menus survived a reboot.
   IOP (the music stream), has to go through iomanX. USB or a disc image the
   user builds are the alternatives; `host:` stays for development.
 - Output on the SDM-X53 via VGA.
+- GS time, which only hardware shows: PCSX2 charges next to nothing for fill,
+  palette loads, TEXFLUSH or primitive setup (the Psychonauts investigation
+  below found the same), so a frame that's fine in PCSX2 can still be
+  GS-bound on a console. Compare render time with and without drawing.
 
 ### 10. Performance: the C path (PATH3)
 Every drawing packet is built by the EE in C and DMA'd from main RAM straight to
@@ -215,11 +219,54 @@ exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
   test in `render_ps2.c`.
 - VU0 loads 16-byte aligned vectors. `render_vertex_t`'s position isn't one, so
   track quads need their positions copied first; models' `vec4_t` are fine.
+- Also try `-Os` against `-O3` on hardware: Lemarié (SCEE, 2003) found
+  shipped games gained up to 10% from small code, as EE instruction-cache
+  misses were their main slowdown. PCSX2 can't tell (it barely models them).
 
 ### 12. Performance: VU1 renderer (PATH1)
 - VU1 microcode transforms, clips and builds GS packets itself, and kicks them to
   the GIF with `XGKICK` (PATH1), in parallel with the EE. The EE sends a matrix
   and its vertices per batch through VIF1. Textures keep going over PATH3.
+- Lessons from the user's Psychonauts PS2 investigation (a separate project
+  that measured a shipped game's VU1 renderer from GS dumps, save states and
+  its microcode; emulator and static figures, none from hardware):
+  - One fused loop per vertex (unpack, transform, divide, clip flags, FTOI4,
+    store), not passes chained over VU memory. Each of Psychonauts' passes was
+    as good as Sony's samples, but chaining them cost 2–4× the 15–20 cycles a
+    vertex Sony called typical. A few specialised programs (e.g. unclipped,
+    clipped), chosen per batch on the EE.
+  - Cull in layers: per track section on the EE before anything is sent, a
+    bounding-sphere test per batch on VU1 (about 50 cycles), then trivial
+    rejects per triangle with ADC. Clip only triangles that cross the guard
+    band (we already do), without transforming their vertices again.
+  - ADC restarts strips and drops rejected triangles without duplicate
+    vertices (42% of Psychonauts' triangles were zero-area strip joins).
+  - Double-buffer VU memory (XTOP/XITOP) and kick early, so one batch's
+    XGKICK overlaps the next batch's maths. Emulators don't show XGKICK
+    stalls; measure them on hardware.
+  - Textures stay on PATH3 (Bain, AGDC 2002: PATH1 stalls while PATH2
+    transfers), with no FLUSHA per texture change.
+  - Track and ship meshes precompiled as VIF UNPACK streams (16-bit
+    positions, packed UVs and colours), the EE only writing headers and DMA
+    `ref` tags; referenced data aligned to 8 qwords.
+  - A static timing model of the microcode first: the Psychonauts session's
+    `vu.py` predicted the emulator to within a few percent, before running.
+- What the GS is sent today, from a GS dump of one frame (track02 lap frame
+  1200, `tools/gs_dump.sh 1200` then `tools/gs_tools.py`; counts from the
+  dump, not from timing):
+  - About 930 polygons (1,385 triangles), 594,000 pixels drawn for a 307,200
+    pixel screen, 110 KB, 251 texture binds across 46 textures.
+  - 557 polygons (60%, 67% of their pixels) are fully hidden by the end of
+    the frame, and 91% of those hidden pixels passed the depth test when
+    drawn: geometry arrives mostly back to front. Hidden polygons cost EE
+    transform, clip and packet time, which is our bottleneck, so visibility
+    per track section (a precomputed list of what each section can see) may
+    pay before VU1 does. Approximate: the replay doesn't model the alpha test.
+  - 16% of triangles are under a pixel; back faces drawn are negligible.
+  - Every bind loads its palette (CLD=1). CLD=4 (load only when the palette
+    address changes) would save none, because each texture has its own
+    palette and every bind changes texture. Fewer palette loads means fewer
+    binds: sorting opaque polygons by texture within a section.
 - Batches end at matrix, texture and blend changes (see the architecture
   decisions), so the rewrite stays inside `render_ps2.c`.
 - References (read, never copied): ps2gl's `vu1/` renderers, including clipping
