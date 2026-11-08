@@ -131,7 +131,7 @@ Read it before starting work on a stage.
   folder `/WIPEOUT-PS2`. It also gets `icon.sys` and `icon.ico`, written when
   missing: the Feisar converted at runtime from the loaded model and textures
   (`render_ps2_texel()` in `render_ps2.h` reads texels back), never stored in
-  the repo. PCSX2's slot 1 card must be formatted (the user formatted it).
+  the repo. The emulator's slot 1 card must be inserted and formatted (see Emulator below).
   Icon triangles wind the other way from the game's.
 - 16:9 is anamorphic as on the Dreamcast: layout 640x360, 16:9 projection, output
   fills all lines. Menu/HUD code checks `platform_screen_size().y == 360`.
@@ -172,24 +172,24 @@ Read it before starting work on a stage.
 
 ## Build and run workflow (`tools/`)
 - `tools/build_and_run.sh [--no-build] [--shot] <dir> [expect]`: builds the image from
-  `.devcontainer/`, runs `make` in `<dir>` in the container, restarts PCSX2 with the
+  `.devcontainer/`, runs `make` in `<dir>` in the container, restarts the emulator with the
   `.elf`, copies emuLog.txt to `pcsx2_output.log` and waits for `expect` in it.
-  `--shot` asks PCSX2 for a screenshot (F8) after a match.
+  `--shot` asks the emulator for a screenshot (F8) after a match.
 - `tools/host_bridge.sh`: run on the Mac. Inside the devcontainer, write a target dir
   (and optionally an expect string on line 2) to `run_on_host.trigger`, and the bridge
   runs `build_and_run.sh --no-build` on it.
 - `tools/smoke/`: minimal ps2sdk program. `tools/build_and_run.sh tools/smoke "SMOKE: ok"`
   proves the whole loop works.
 - Logging: `platform_ps2.c` makes stdout and stderr line-buffered streams that
-  write to the serial port, which PCSX2 copies to emuLog.txt. Use plain `printf()`.
+  write to the serial port, which the emulator copies to its emulog.txt. Use plain `printf()`.
   (`sio_puts()` appends its own newline, so avoid it for log lines.)
 - Display output is a build option: `make VIDEO=480i|480p|vga` (default vga: 640x480, square pixels, matching the game's layout 1:1;
   480i is 640x448 field-rendered, scaled from 480 lines).  `build_and_run.sh` always builds the default; for another mode, run make with
   VIDEO in the container, then `build_and_run.sh --no-build`.
 - Screenshots: the user granted the Claude app Accessibility permission, so
-  `build_and_run.sh --shot` (F8 to PCSX2) works; read the PNG from
-  `~/Library/Application Support/PCSX2/snaps/`. Screen Recording isn't granted.
-- Drive PCSX2: `tools/pcsx2_input.sh hold k` presses Cross (keys follow PCSX2's
+  `build_and_run.sh --shot` (F8 to the emulator) works; read the PNG from
+  `~/Library/Application Support/ARMSX2/snaps/` (`PCSX2/snaps/` with `EMU=pcsx2`). Screen Recording isn't granted.
+- Drive the emulator: `tools/pcsx2_input.sh hold k` presses Cross (keys follow its
   Pad1 keyboard bindings, listed in the script), `tools/pcsx2_input.sh shot` takes a
   screenshot and prints its path. From the title, 5 Cross presses start a race
   (track02).
@@ -212,8 +212,8 @@ Read it before starting work on a stage.
   BENCH_FREEZE=N`) and takes a screenshot: the same frame in any build, to
   check a change draws the same. Compare as BMPs (`sips -s format bmp`); the
   same build differs from itself by about 2–3k bytes in the billboards.
-- GS dumps: `tools/gs_dump.sh N` freezes the same lap frame and saves a PCSX2
-  GS dump (Shift+F8) and a screenshot into the gitignored `gsdump/`.
+- GS dumps: `tools/gs_dump.sh N` freezes the same lap frame and saves a GS dump
+  (Shift+F8; ARMSX2 writes it as `.gs.zip`, which the tools read) and a screenshot into the gitignored `gsdump/`.
   `tools/gs_tools.py` runs the user's Psychonauts project's dump tools
   (outside this repo, `~/scratch/psychonauts/tools`, run with that project's
   `.venv` Python) adapted to our offset, scissor and fans: what the GS is sent,
@@ -222,8 +222,16 @@ Read it before starting work on a stage.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
-- PCSX2 on Mac is an Intel build running under Rosetta. ARMSX2 is a native alternative.
-  PCSX2 uses the user's own BIOS dump, and host filesystem access (HostFs) is enabled.
+- Emulator: ARMSX2 (`/Applications/ARMSX2.app`), PCSX2's native ARM64 fork, is the
+  default for every script (`tools/emu.sh`). PCSX2 on Mac is an Intel build under
+  Rosetta, at about 70% of real time; `EMU=pcsx2` before any script picks it, e.g. to
+  check a surprising result. Both use the user's own BIOS dump (ARMSX2 reads PCSX2's
+  `bios/` folder), HostFs and the same Pad1 keys; logs are `logs/emulog.txt` in each
+  one's Application Support folder. Their timing estimates differ, so compare
+  benchmarks on the same emulator: figures up to stage 10.3 are from PCSX2.
+  The user's Psychonauts project uses ARMSX2 too, and both emulators currently have
+  no card in slot 1 (`Slot1_Filename` is empty), so saves log `memcard: no formatted
+  PS2 memory card`. ARMSX2's `memcards/` has copies of PCSX2's cards.
 - The original sandbox is `~/Development/ps2dev`. Its `samples/triangle` renders a gsKit
   triangle at 59.94fps, a known-good reference.
 
