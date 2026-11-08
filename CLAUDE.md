@@ -17,8 +17,10 @@ Read it before starting work on a stage.
   by the IOP) are done: menus run at 60fps; in PCSX2 a lap of any circuit
   averages 103–137fps uncapped, with 0.0–0.4% of frames over budget
   (performance is stages 10–12).
-  Next up: stage 9 (real hardware, game data on the internal HDD).
-- Not yet run on real hardware (needs ps2link, stage 9).
+  Next up: the rest of stage 9 (living with ps2link, game data on the SSD's
+  exFAT partition, standalone boot); see ROADMAP.md.
+- Runs on the user's fat PS2 under ps2link from `host:` (stage 9.1, branch
+  `stage-9/real-hardware`): 58fps in a hand-driven race.
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
 - Game data is not in the repo. It's the PS1 data from phoboslab's wipeout-rewrite
@@ -117,9 +119,9 @@ Read it before starting work on a stage.
     30 frames whether the track ended). The files are SPU2 ADPCM `.spu`, made
     from the QOA ones by `tools/convert_music.sh` into the gitignored
     `wipeout/music/`; the game's `.adpcm` paths become `.spu`. The module reads
-    them through iomanX (so the HDD's `pfs0:` will work too) into two halves of
-    a buffer per channel, refilled on the SPU2 interrupt, uploaded on SPU2 DMA
-    channel 1 (ps2snd uses channel 0). Core 1 mixes core 0 in (MMIX), dry and
+    them through iomanX (so the SSD's exFAT partition will work too) into
+    two halves of a buffer per channel, refilled on the SPU2 interrupt,
+    uploaded on SPU2 DMA channel 1 (ps2snd uses channel 0). Core 1 mixes core 0 in (MMIX), dry and
     into the reverb.
   - Reverb: core 1's Hall effect, faded in by `sfx_set_reverb()`, which `race.c`
     calls each frame (sections with more than 4 faces, as on the PS1).

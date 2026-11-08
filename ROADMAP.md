@@ -26,7 +26,7 @@ land" in `CLAUDE.md`). Finished stages are tagged `stage-N`.
 | 6 | Textures and blending ✅ | The game looks right |
 | 7 | Sound ✅ | Sound effects and music in menus and races |
 | 8 | Saves ✅ | Settings and best times survive a power cycle on a memory card |
-| 9 | Real hardware and packaging | Runs on a real PS2, with game data loaded from its internal HDD |
+| 9 | Real hardware and packaging | Runs on a real PS2 without ps2link, with game data loaded from the exFAT partition on its internal drive |
 | 10 | Performance: the C path ✅ (10.1–10.3) | The EE's C renderer (PATH3) is as fast as it gets, in sub-stages 10.1–10.3 |
 | 11 | Performance: VU0 macro mode | Vertex maths on VU0, measured on real hardware |
 | 12 | Performance: VU1 renderer | Transform, clip and packets on VU1 (PATH1); 60fps with headroom on real hardware in a full race |
@@ -132,24 +132,66 @@ load at boot; a setting changed in the menus survived a reboot.
   the repo.
 
 ### 9. Real hardware and packaging
-- Checklist from earlier stages: DMA, alignment and timing (PCSX2 tolerates what
-  hardware doesn't); the thin black band at the bottom in VGA mode under PCSX2.
-- Saves: on a real card, check save times (each libmc call waits) and the
-  browser icon.
-- Sound: music streams from the IOP (stage 10.3), reading the file as it
-  plays, while levels load too. Listen for dropouts with the real data source.
-- ps2link + ps2client over the network for development.
-- How a console finds the game data (it isn't redistributable): the user's
-  internal HDD, the plan. An APA-partitioned drive with a PFS filesystem, read
-  through ps2sdk's IOP modules (`ps2atad`, `ps2hdd`, `ps2fs`) as `pfs0:`, which
-  is an iomanX device: everything that opens game files, on the EE and the
-  IOP (the music stream), has to go through iomanX. USB or a disc image the
-  user builds are the alternatives; `host:` stays for development.
-- Output on the SDM-X53 via VGA.
-- GS time, which only hardware shows: PCSX2 charges next to nothing for fill,
-  palette loads, TEXFLUSH or primitive setup (the Psychonauts investigation
-  below found the same), so a frame that's fine in PCSX2 can still be
-  GS-bound on a console. Compare render time with and without drawing.
+The console is the user's fat PS2 (SCPH-30002 R, PAL) with the network adapter
+and an SSD on a PATA-to-SATA board, on the SDM-X53 through the PS2 Linux kit's
+VGA adapter. PS2BBL on the memory card launches ps2link (Square). Each
+sub-stage is its own branch, PR and tag (`stage-9.1` ...).
+- **9.1 First boot.** ✅ on hardware, not yet merged. `make LOG=net` sends the
+  log over ps2link's network stack to `ps2client listen` on the Mac (`LOG=sio`,
+  the default, writes to the serial port, which only an emulator reads). The
+  game runs from `host:` through ps2client: menus, races, VGA on the SDM-X53,
+  pad, sound effects with reverb, saves on the real card. One fault PCSX2
+  hides: gcc's 64-bit stores into the 32-byte-aligned track faces raised an
+  address error at `mem_bump()`'s 4-byte alignment, so the faces are now
+  aligned to 32. First profile, a hand-driven race: 58fps average, work
+  11.4 ms a frame, 3.7% of frames over budget (PCSX2: 0.0–0.4%).
+- **9.2 Living with ps2link.** The game doesn't reset the IOP, so ps2link's
+  modules (dev9, SMAP, the network stack, its reset-button handler) stay
+  loaded under it and share IOP memory with ours. Still to do:
+  - `ps2client reset` and the console's reset button crash ps2link (a newlib
+    reent bug and I/O in the reset-button interrupt). A fixed ps2link build
+    exists outside this repo; install it on the card, then test both resets
+    mid-race.
+  - The game's heap and stack (ps2sdk's linkfile defaults: the stack at the
+    top of RAM, the heap up to it) cover a high-loading ps2link
+    (0x01EE8000). Set `_stack` and `_heap_size` below it for ps2link builds,
+    so a reset can re-exec ps2link.
+  - Listen for music: the first runs logged no music lines.
+- **9.3 Game data on the SSD.** The game data isn't redistributable, so it
+  lives on the user's drive. The SSD is a PC-style MBR disk shared with
+  PS2 Linux (swap, `/home`, `/usr`, `/`), so an APA/PFS drive read as `pfs0:`
+  would mean repartitioning it, which is ruled out: the Linux install must
+  survive. Instead, partition 4 is exFAT ("PS2GAMES"), which OPL 1.2 already
+  reads on this console. The game reads it through ps2sdk's block-device
+  stack: `ata_bd.irx` (the ATA drive as a block device, on dev9), `bdm.irx`
+  (block devices and MBR partitions) and `bdmfs_fatfs.irx` (FAT/exFAT). That
+  registers an iomanX device, so everything that opens game files, on the EE
+  and the IOP (the music stream), still goes through iomanX: the EE's newlib
+  through fileXio. To check first: the device name and unit the partition
+  appears as, that this ps2sdk's fatfs is built with exFAT, and that dev9 is
+  not loaded a second time when ps2link has already loaded it.
+  The data goes in a `WIPEOUT/` folder, copied with the SSD on the Mac;
+  never write to the Linux partitions. Then measure load times (PCSX2:
+  344–425 ms a race over `host:`) and listen for music dropouts while levels
+  load.
+- **9.4 Standalone.** Launched from PS2BBL or OPL without ps2link: reset the
+  IOP when ps2link isn't there and load our own modules, find the data
+  folder from `argv[0]`, keep `host:` as the development fallback.
+- **9.5 Hardware checklist and benchmarks.**
+  - DMA, alignment and timing: any other `aligned(16/32)` struct in
+    `mem_bump()` memory is a candidate for the fault 9.1 found.
+  - VGA on the SDM-X53: the thin black band at the bottom seen under PCSX2,
+    and the picture's position and size.
+  - Saves on a real card: save times (each libmc call waits) and the browser
+    icon.
+  - GS time, which only hardware shows: PCSX2 charges next to nothing for
+    fill, palette loads, TEXFLUSH or primitive setup (the Psychonauts
+    investigation below found the same), so a frame that's fine in PCSX2 can
+    still be GS-bound on a console. Compare render time with and without
+    drawing.
+  - `make BENCH=1 LOG=net` on the console, for repeatable figures, and the
+    same for the `stage-10.1`–`stage-10.3` tags, so stage 10's gains are
+    measured on hardware.
 
 ### 10. Performance: the C path (PATH3)
 Every drawing packet is built by the EE in C and DMA'd from main RAM straight to
@@ -198,7 +240,7 @@ on hardware, for true figures.
   - Texture loading, measured: a race loads in 344–425 ms in PCSX2, of which
     `render_texture_create()` is 99–115 ms, LZSS 85–103, reading files 82–114
     and TIM decoding 12–15. Not worth changing upstream `image.c` for now;
-    measure again on hardware with the data on the HDD (stage 9).
+    measure again on hardware with the data on the SSD (stage 9.3).
   - Tried and set aside: an object path that skips `vs[]` (no gain).
   Result in PCSX2, against 10.2: each lap 1.0–1.4 ms faster (track02 8.38 to
   7.32 ms, 119 to 137fps uncapped); across the circuits a lap averages
@@ -351,4 +393,3 @@ Commits and PRs that change how data reaches the GS name the path.
   (640x224 per field, FRAME mode) halves VRAM and fill rate but is softer.
 - Whether 800×600 VGA with 16-bit framebuffers is worth the fill rate and VRAM
   (stage 13).
-- How game data ships to a real console (stage 9).
