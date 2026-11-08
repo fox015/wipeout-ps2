@@ -212,6 +212,13 @@ Read it before starting work on a stage.
   BENCH_FREEZE=N`) and takes a screenshot: the same frame in any build, to
   check a change draws the same. Compare as BMPs (`sips -s format bmp`); the
   same build differs from itself by about 2–3k bytes in the billboards.
+- GS dumps: `tools/gs_dump.sh N` freezes the same lap frame and saves a PCSX2
+  GS dump (Shift+F8) and a screenshot into the gitignored `gsdump/`.
+  `tools/gs_tools.py` runs the user's Psychonauts project's dump tools
+  (outside this repo, `~/scratch/psychonauts/tools`, run with that project's
+  `.venv` Python) adapted to our offset, scissor and fans: what the GS is sent,
+  per triangle, palette loads, and a depth replay for hidden polygons. Pass
+  `VSYNCS=1`. Counts from a dump don't depend on PCSX2's timing.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
