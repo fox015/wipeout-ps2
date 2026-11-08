@@ -33,6 +33,13 @@ static int sio_stream_write(void *cookie, const char *buf, int len) {
 }
 
 static void log_to_sio(void) {
+#ifdef LOG_NET
+	// make LOG=net: leave stdout on ps2sdk's tty, which ps2link sends over the
+	// network to ps2client on real hardware.
+	setvbuf(stdout, NULL, _IOLBF, 0);
+	setvbuf(stderr, NULL, _IOLBF, 0);
+	return;
+#endif
 	sio_init(115200, 0, 0, 0, 0);
 	stdout = fwopen(NULL, sio_stream_write);
 	stderr = fwopen(NULL, sio_stream_write);
