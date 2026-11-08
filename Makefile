@@ -53,8 +53,18 @@ ifneq ($(BENCH_FREEZE),)
 EE_CFLAGS += -DBENCH_FREEZE=$(BENCH_FREEZE)
 endif
 
-# Rebuild what VIDEO and BENCH change when they do.
-CONFIG_STAMP = src/.config-$(VIDEO)-bench$(BENCH)$(BENCH_FREEZE)
+# Log output: sio (default; the serial port, which PCSX2 copies to emuLog.txt)
+# or net (ps2sdk's tty, which ps2link sends to ps2client on real hardware).
+# e.g. make LOG=net
+LOG ?= sio
+ifeq ($(LOG),net)
+EE_CFLAGS += -DLOG_NET
+else ifneq ($(LOG),sio)
+$(error LOG must be sio or net)
+endif
+
+# Rebuild what VIDEO, BENCH and LOG change when they do.
+CONFIG_STAMP = src/.config-$(VIDEO)-bench$(BENCH)$(BENCH_FREEZE)-log$(LOG)
 $(CONFIG_STAMP):
 	rm -f src/.config-* src/.video-*
 	touch $@

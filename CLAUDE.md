@@ -17,8 +17,10 @@ Read it before starting work on a stage.
   by the IOP) are done: menus run at 60fps; in PCSX2 a lap of any circuit
   averages 103–137fps uncapped, with 0.0–0.4% of frames over budget
   (performance is stages 10–12).
-  Next up: stage 9 (real hardware, game data on the internal HDD).
-- Not yet run on real hardware (needs ps2link, stage 9).
+  Next up: the rest of stage 9 (living with ps2link, game data on the SSD's
+  exFAT partition, standalone boot); see ROADMAP.md.
+- Runs on the user's fat PS2 under ps2link from `host:` (stage 9.1, branch
+  `stage-9/real-hardware`): 58fps in a hand-driven race.
 - An earlier tooling commit (devcontainer + watch_ps2.sh) was never pushed. It's kept
   on the local branch `archive/devcontainer-tooling`; stage 0 replaced it.
 - Game data is not in the repo. It's the PS1 data from phoboslab's wipeout-rewrite
@@ -117,9 +119,9 @@ Read it before starting work on a stage.
     30 frames whether the track ended). The files are SPU2 ADPCM `.spu`, made
     from the QOA ones by `tools/convert_music.sh` into the gitignored
     `wipeout/music/`; the game's `.adpcm` paths become `.spu`. The module reads
-    them through iomanX (so the HDD's `pfs0:` will work too) into two halves of
-    a buffer per channel, refilled on the SPU2 interrupt, uploaded on SPU2 DMA
-    channel 1 (ps2snd uses channel 0). Core 1 mixes core 0 in (MMIX), dry and
+    them through iomanX (so the SSD's exFAT partition will work too) into
+    two halves of a buffer per channel, refilled on the SPU2 interrupt,
+    uploaded on SPU2 DMA channel 1 (ps2snd uses channel 0). Core 1 mixes core 0 in (MMIX), dry and
     into the reverb.
   - Reverb: core 1's Hall effect, faded in by `sfx_set_reverb()`, which `race.c`
     calls each frame (sections with more than 4 faces, as on the PS1).
@@ -131,7 +133,7 @@ Read it before starting work on a stage.
   folder `/WIPEOUT-PS2`. It also gets `icon.sys` and `icon.ico`, written when
   missing: the Feisar converted at runtime from the loaded model and textures
   (`render_ps2_texel()` in `render_ps2.h` reads texels back), never stored in
-  the repo. PCSX2's slot 1 card must be formatted (the user formatted it).
+  the repo. The emulator's slot 1 card must be inserted and formatted (see Emulator below).
   Icon triangles wind the other way from the game's.
 - 16:9 is anamorphic as on the Dreamcast: layout 640x360, 16:9 projection, output
   fills all lines. Menu/HUD code checks `platform_screen_size().y == 360`.
@@ -172,24 +174,24 @@ Read it before starting work on a stage.
 
 ## Build and run workflow (`tools/`)
 - `tools/build_and_run.sh [--no-build] [--shot] <dir> [expect]`: builds the image from
-  `.devcontainer/`, runs `make` in `<dir>` in the container, restarts PCSX2 with the
+  `.devcontainer/`, runs `make` in `<dir>` in the container, restarts the emulator with the
   `.elf`, copies emuLog.txt to `pcsx2_output.log` and waits for `expect` in it.
-  `--shot` asks PCSX2 for a screenshot (F8) after a match.
+  `--shot` asks the emulator for a screenshot (F8) after a match.
 - `tools/host_bridge.sh`: run on the Mac. Inside the devcontainer, write a target dir
   (and optionally an expect string on line 2) to `run_on_host.trigger`, and the bridge
   runs `build_and_run.sh --no-build` on it.
 - `tools/smoke/`: minimal ps2sdk program. `tools/build_and_run.sh tools/smoke "SMOKE: ok"`
   proves the whole loop works.
 - Logging: `platform_ps2.c` makes stdout and stderr line-buffered streams that
-  write to the serial port, which PCSX2 copies to emuLog.txt. Use plain `printf()`.
+  write to the serial port, which the emulator copies to its emulog.txt. Use plain `printf()`.
   (`sio_puts()` appends its own newline, so avoid it for log lines.)
 - Display output is a build option: `make VIDEO=480i|480p|vga` (default vga: 640x480, square pixels, matching the game's layout 1:1;
   480i is 640x448 field-rendered, scaled from 480 lines).  `build_and_run.sh` always builds the default; for another mode, run make with
   VIDEO in the container, then `build_and_run.sh --no-build`.
 - Screenshots: the user granted the Claude app Accessibility permission, so
-  `build_and_run.sh --shot` (F8 to PCSX2) works; read the PNG from
-  `~/Library/Application Support/PCSX2/snaps/`. Screen Recording isn't granted.
-- Drive PCSX2: `tools/pcsx2_input.sh hold k` presses Cross (keys follow PCSX2's
+  `build_and_run.sh --shot` (F8 to the emulator) works; read the PNG from
+  `~/Library/Application Support/ARMSX2/snaps/` (`PCSX2/snaps/` with `EMU=pcsx2`). Screen Recording isn't granted.
+- Drive the emulator: `tools/pcsx2_input.sh hold k` presses Cross (keys follow its
   Pad1 keyboard bindings, listed in the script), `tools/pcsx2_input.sh shot` takes a
   screenshot and prints its path. From the title, 5 Cross presses start a race
   (track02).
@@ -212,11 +214,26 @@ Read it before starting work on a stage.
   BENCH_FREEZE=N`) and takes a screenshot: the same frame in any build, to
   check a change draws the same. Compare as BMPs (`sips -s format bmp`); the
   same build differs from itself by about 2–3k bytes in the billboards.
+- GS dumps: `tools/gs_dump.sh N` freezes the same lap frame and saves a GS dump
+  (Shift+F8; ARMSX2 writes it as `.gs.zip`, which the tools read) and a screenshot into the gitignored `gsdump/`.
+  `tools/gs_tools.py` runs the user's Psychonauts project's dump tools
+  (outside this repo, `~/scratch/psychonauts/tools`, run with that project's
+  `.venv` Python) adapted to our offset, scissor and fans: what the GS is sent,
+  per triangle, palette loads, and a depth replay for hidden polygons. Pass
+  `VSYNCS=1`. Counts from a dump don't depend on PCSX2's timing.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
-- PCSX2 on Mac is an Intel build running under Rosetta. ARMSX2 is a native alternative.
-  PCSX2 uses the user's own BIOS dump, and host filesystem access (HostFs) is enabled.
+- Emulator: ARMSX2 (`/Applications/ARMSX2.app`), PCSX2's native ARM64 fork, is the
+  default for every script (`tools/emu.sh`). PCSX2 on Mac is an Intel build under
+  Rosetta, at about 70% of real time; `EMU=pcsx2` before any script picks it, e.g. to
+  check a surprising result. Both use the user's own BIOS dump (ARMSX2 reads PCSX2's
+  `bios/` folder), HostFs and the same Pad1 keys; logs are `logs/emulog.txt` in each
+  one's Application Support folder. Their timing estimates differ, so compare
+  benchmarks on the same emulator: figures up to stage 10.3 are from PCSX2.
+  The user's Psychonauts project uses ARMSX2 too, and both emulators currently have
+  no card in slot 1 (`Slot1_Filename` is empty), so saves log `memcard: no formatted
+  PS2 memory card`. ARMSX2's `memcards/` has copies of PCSX2's cards.
 - The original sandbox is `~/Development/ps2dev`. Its `samples/triangle` renders a gsKit
   triangle at 59.94fps, a known-good reference.
 
@@ -252,7 +269,18 @@ Read it before starting work on a stage.
   - `vcl-1.28`: VCL, the VU assembly optimiser (openvcl is the open successor).
   - `sps2dev-0.4.0`: PS2 Linux direct-hardware kit. Concepts carry over, the API doesn't.
 - `~/misc/dell linux backup/home/fox/Downloads/`: `final-gdc2002-clippingps2.pdf`
-  (PS2 clipping, for stage 5) and `PS2Optimisations.pdf` (stage 10).
+  (PS2 clipping, for stage 5) and `PS2Optimisations.pdf` (stage 10; `006.ppt`
+  is the same deck with speaker notes). Also `rgreen_procedural_renderinggdc2001.pdf`
+  (writing VU1 code), `TextureSwizzling.pdf` (faster PSMT4/PSMT8 uploads, unread)
+  and `ps2_normalmapping.pdf` (IO Interactive, unread). `nsce_presentation.ppt`
+  there is a Sony internal planning deck: confidential, don't use it.
+- `~/Development/ps2-talks/`: Ostler (SCEE), "The Primal Seas: Water on PS2",
+  SIGGRAPH 2003 (portal/octree visibility, geometry generated on VU1).
+- `~/scratch/psychonauts/notes/`: the user's Psychonauts PS2 investigation.
+  `FOR_WIPEOUT.md` is its summary for us (VU1 renderer lessons, GS waste,
+  emulator gotchas, and a list of every PS2 talk it found or looked for, with
+  links); `FINDINGS.md` is the detail. Its figures are from emulators, GS dumps
+  and save states, not hardware.
 - `~/Development/ps2/3dmod/`: the user's 2004 PS2 Linux experiments (DMA, pad, textures,
   a little VU1 in VCL). Dabbling, not a reference: for VU code use ps2gl and the contest demos.
 - `~/Development/ps2/playstation2-linux.com.7z`: 1.7 GB archive of the PS2 Linux
@@ -265,7 +293,11 @@ Local material (paths above) is read for ideas, never copied.
 1. **Sony's own engineers.** The hardware manuals; ps2gl and ps2stuff (SCEA,
    open-sourced; maintained as ps2dev/ps2gl and ps2dev/ps2stuff); VCL (SCEA);
    Colin Hughes' GDC 2002 "PlayStation 2 Clipping" and George Bain's AGDC 2002
-   "PS2 Programming Optimisations" (both SCEE); the VU contest harness (SCEE)
+   "PS2 Programming Optimisations" (both SCEE); Lionel Lemarié's "Reaching for
+   the Limits of PS2 Performance" (SCEE 2003, statistics from shipped games,
+   web copy at retrocdn.net); Robin Green's GDC 2001 "Procedural Rendering on
+   PlayStation 2" (SCEA); Dean & Breugelmans' "Texture Compression" (SCEE,
+   2001, on Scribd); the VU contest harness (SCEE)
    and the SCEA demos in `previous_demos` (`invite`, `slow_motion`, `tree`).
 2. **Proven open source, widely used.** ps2sdk and gsKit (we build on them);
    PCSX2's source (how the hardware behaves, and how VU timing is emulated);

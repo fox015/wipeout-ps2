@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run on the Mac. Lets a build inside the devcontainer start PCSX2 on the host.
+# Run on the Mac. Lets a build inside the devcontainer start the emulator on the host.
 #
 # Inside the container, after building:
 #   echo "tools/smoke" > run_on_host.trigger
