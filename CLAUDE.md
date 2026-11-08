@@ -216,11 +216,15 @@ Read it before starting work on a stage.
   same build differs from itself by about 2–3k bytes in the billboards.
 - GS dumps: `tools/gs_dump.sh N` freezes the same lap frame and saves a GS dump
   (Shift+F8; ARMSX2 writes it as `.gs.zip`, which the tools read) and a screenshot into the gitignored `gsdump/`.
-  `tools/gs_tools.py` runs the user's Psychonauts project's dump tools
-  (outside this repo, `~/scratch/psychonauts/tools`, run with that project's
-  `.venv` Python) adapted to our offset, scissor and fans: what the GS is sent,
-  per triangle, palette loads, and a depth replay for hidden polygons. Pass
-  `VSYNCS=1`. Counts from a dump don't depend on PCSX2's timing.
+  `tools/gs_tools.py stats|tris|zsim|clut|... DUMP` runs ps-probe, the user's
+  local toolset for this kind of analysis (outside this repo,
+  `~/Development/ps-probe`, or `$PSPROBE`; its own `.venv`), with our settings
+  from `tools/psprobe.toml`: gsKit's XYOFFSET and SCISSOR, 640x480, one vsync,
+  FBP 0, fans labelled by winding. It reports what the GS is sent, per
+  triangle, palette loads, and a depth replay for hidden polygons. Counts from
+  a dump don't depend on the emulator's timing. Settings are options, never
+  code edits; ps-probe's other tools (PINE, VU decoder, VIF walker) are
+  `psprobe ps2 ...` in its venv.
 - Run the game: `tools/build_and_run.sh . "frames:"`. The log shows `load: <file>`
   per asset, `TODO: <function>` per stub on first use, `frames: N (t=Xs)` each second,
   and the game's own `Abort at ...` messages.
