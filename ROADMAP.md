@@ -298,12 +298,17 @@ exactly those. Still PATH3: VU0 only does the EE's maths, inline (as COP2).
   dump, not from timing):
   - About 930 polygons (1,385 triangles), 594,000 pixels drawn for a 307,200
     pixel screen, 110 KB, 251 texture binds across 46 textures.
-  - 557 polygons (60%, 67% of their pixels) are fully hidden by the end of
-    the frame, and 91% of those hidden pixels passed the depth test when
-    drawn: geometry arrives mostly back to front. Hidden polygons cost EE
-    transform, clip and packet time, which is our bottleneck, so visibility
-    per track section (a precomputed list of what each section can see) may
-    pay before VU1 does. Approximate: the replay doesn't model the alpha test.
+  - 505 polygons (54%) are fully hidden by the end of the frame, but they
+    are small: 18,000 pixels, 3% of those drawn. 73% of the pixels in
+    hidden or tiny polygons passed the depth test when drawn: geometry
+    arrives mostly back to front. Hidden polygons cost EE transform, clip
+    and packet time, which is our bottleneck, more than GS fill, so
+    visibility per track section (a precomputed list of what each section
+    can see) may pay before VU1 does. Another 52 polygons drawn with
+    ZMSK=1 (transparent) own no pixel but are on screen (345,000 pixels pass
+    the depth test). Before ps-probe's fix for those, the replay called them
+    hidden too, and gave 557 hidden polygons (60%) with 67% of the pixels.
+    Approximate: the replay doesn't model the alpha test.
   - 16% of triangles are under a pixel; back faces drawn are negligible.
   - Every bind loads its palette (CLD=1). CLD=4 (load only when the palette
     address changes) would save none, because each texture has its own
