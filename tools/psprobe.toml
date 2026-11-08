@@ -1,0 +1,14 @@
+# wipeout-ps2's settings for ps-probe's GS dump tools (tools/gs_tools.py).
+[ps2.gs]
+# gsKit sets XYOFFSET and SCISSOR once at boot, so they aren't in a dump.
+screen = [640, 480]
+xyoffset = [2048, 2048]
+scissor = [0, 639, 0, 479]
+# A frozen bench frame repeats, and zsim would count the repeat as the
+# first copy's overdraw, so read one vsync. It draws to FBP 0.
+vsyncs = 1
+frame_vsyncs = 1
+fbp = 0
+# Each wipeout polygon is one fan (one PRIM), so labelling fans by winding
+# makes zsim's per-batch figures per polygon.
+fan_winding = true
