@@ -2,11 +2,13 @@
 
 #ifdef BENCH
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "bench_ps2.h"
+#include "platform.h"
 #include "system.h"
 #include "wipeout/game.h"
 #include "wipeout/camera.h"
@@ -40,6 +42,49 @@ typedef struct {
 	uint32_t worst;
 } stats_t;
 
+// Every bench: line is also kept here and written to RESULTS_FILE once the
+// run is over. On a console the log goes out as UDP, which drops lines over
+// Wi-Fi; the file goes through host:, over ps2link's TCP link to ps2client
+// (or the emulator's HostFs). Each host: write is a blocking round trip, so
+// it's done only after the last measured frame.
+#define RESULTS_FILE "bench.txt"
+static char results[8192];
+static int results_len;
+
+static void bench_log(const char *fmt, ...) {
+	char line[256];
+	va_list args;
+	va_start(args, fmt);
+	int len = vsnprintf(line, sizeof(line), fmt, args);
+	va_end(args);
+	if (len < 0) {
+		return;
+	}
+	if (len >= (int)sizeof(line)) {
+		len = sizeof(line) - 1;
+	}
+	printf("%s\n", line);
+	if (results_len + len + 1 < (int)sizeof(results)) {
+		memcpy(results + results_len, line, len);
+		results_len += len;
+		results[results_len++] = '\n';
+	}
+}
+
+// Called after the last measured frame: bench_frame() ignores this one.
+static void write_results(void) {
+	FILE *f = platform_open_asset(RESULTS_FILE, "w");
+	if (!f || fwrite(results, 1, results_len, f) != (size_t)results_len) {
+		printf("bench: couldn't write host:%s\n", RESULTS_FILE);
+	}
+	else {
+		printf("bench: results written to host:%s\n", RESULTS_FILE);
+	}
+	if (f) {
+		fclose(f);
+	}
+}
+
 static phase_t phase;
 static int circuit;
 static stats_t stats;
@@ -61,7 +106,7 @@ static void start_circuit(int c) {
 }
 
 void bench_start(void) {
-	printf("bench: one lap of %s, Venom class, AI driving, weapons off, fixed 1/60s tick\n",
+	bench_log("bench: one lap of %s, Venom class, AI driving, weapons off, fixed 1/60s tick",
 		FIRST_CIRCUIT == LAST_CIRCUIT ? "track02" : "every circuit");
 	start_circuit(FIRST_CIRCUIT);
 }
@@ -79,7 +124,7 @@ static void log_stats(const char *what) {
 	stats_t *s = &stats;
 	float ms = 1000.0f / PROF_HZ;
 	uint32_t n = s->frames ? s->frames : 1;
-	printf("bench: %s %s: %u frames, work %.2f ms avg, %.2f worst, render %.2f, %u polys, %.1f KB to GS; uncapped %.0f fps, %u frames over budget (%.1f%%)\n",
+	bench_log("bench: %s %s: %u frames, work %.2f ms avg, %.2f worst, render %.2f, %u polys, %.1f KB to GS; uncapped %.0f fps, %u frames over budget (%.1f%%)",
 		track_name(), what, (unsigned)s->frames,
 		(double)(s->work * ms / n), (double)(s->worst * ms), (double)(s->render * ms / n),
 		(unsigned)(s->polys / n), (double)(s->qwords * 16 / 1024.0f / n),
@@ -115,7 +160,7 @@ static void log_sections(void) {
 		len += snprintf(line + len, sizeof(line) - len, " %d (%.2f ms)", best,
 			(double)(best_avg * 1000.0f / PROF_HZ));
 	}
-	printf("%s\n", line);
+	bench_log("%s", line);
 	memset(sections, 0, sizeof(sections));
 }
 
@@ -173,8 +218,9 @@ void bench_update(void) {
 			start_circuit(circuit + 1);
 		}
 		else {
-			printf("bench: done\n");
+			bench_log("bench: done");
 			phase = PHASE_DONE;
+			write_results();
 		}
 	}
 }

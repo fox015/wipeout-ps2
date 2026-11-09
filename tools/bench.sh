@@ -10,7 +10,8 @@
 #   shot N  stop track02's lap at frame N and take a screenshot, which
 #           is the same frame in any build (to check a change draws the same)
 #
-# Prints the game's bench: lines: per track, the intro and the first lap
+# Prints the game's bench: lines, from bench.txt, which the game writes through
+# host: once the run is over (so on a console they don't depend on UDP logging): per track, the intro and the first lap
 # (frames, work and render ms per frame, polygons, KB sent to the GS, uncapped
 # fps, frames over budget) and the lap's slowest track sections. The race
 # plays out the same on every run (see src/bench_ps2.h), so frame counts
@@ -43,15 +44,22 @@ if [ "${1:-}" = "shot" ]; then
 	exit 0
 fi
 
+RESULTS=bench.txt # written by the game through host: once the run is over
+rm -f "$RESULTS"
 run_make BENCH=$MODE
 tools/build_and_run.sh --no-build . "bench: one lap" >/dev/null 2>&1 || { echo "bench: didn't start"; exit 1; }
 LIMIT=$([ $MODE = all ] && echo 1800 || echo 300)
 for ((t = 0; t < LIMIT; t += 5)); do
-	grep -q "bench: done" "$LOG" && break
+	grep -q "bench: done" "$RESULTS" 2>/dev/null && break
 	sleep 5
 done
-grep "bench:" "$LOG" | sed 's/^\[[^]]*\] //' | uniq
-grep -q "bench: done" "$LOG" || echo "bench: no result after ${LIMIT}s"
+if grep -q "bench: done" "$RESULTS" 2>/dev/null; then
+	cat "$RESULTS"
+else
+	# No file: show what reached the log.
+	grep "bench:" "$LOG" | sed 's/^\[[^]]*\] //' | uniq
+	echo "bench: no $RESULTS after ${LIMIT}s"
+fi
 
 # Leave the normal build in place.
 run_make

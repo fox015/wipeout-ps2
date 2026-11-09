@@ -34,3 +34,5 @@ iop/music/*.irx
 docs/hw/
 tools/spu_music/spu_music
 /gsdump/
+# tools/bench.sh results, written by the game through host:
+/bench.txt
