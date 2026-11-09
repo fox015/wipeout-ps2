@@ -196,7 +196,7 @@ typedef struct {
 	int ship_model_to_pilot[NUM_PILOTS];
 	int race_points_for_rank[NUM_PILOTS];
 	music_track_t music[NUM_MUSIC_TRACKS];
-	char *credits[114];
+	char *credits[123];
 	struct {
 		char *venom[15];
 		char *venom_all_circuts[19];
