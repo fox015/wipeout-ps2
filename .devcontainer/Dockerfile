@@ -1,6 +1,9 @@
-# Pinned to an exact ps2dev release (multi-arch, native arm64) so the toolchain
-# only changes when we bump it on purpose. gcc 15.2.0, ps2sdk, gsKit.
-FROM ps2dev/ps2dev:v2.0.0@sha256:8e6dc4564598ecce94d078d3111b8c4803f88faa94a6f183ac60240a0ae010a1
+# Pinned by digest to one exact ps2dev build (multi-arch, native arm64), so the
+# toolchain only changes when we bump it on purpose: ps2dev/ps2dev:latest as of
+# 3 Nov 2026, gcc 15.2.0, ps2sdk, gsKit. It is the same pin as the shared PS2
+# toolchain used by the user's other PS2 projects (see CLAUDE.md); bump both
+# together.
+FROM ps2dev/ps2dev@sha256:769c4dd608ee3958ff651eb08a10a51568662630efb06d1c9540cbc70232d02d
 
 # The image ships the compiler and its gmp/mpfr/mpc libraries, but not make.
 RUN apk add --no-cache make

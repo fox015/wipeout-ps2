@@ -163,9 +163,16 @@ Read it before starting work on a stage.
 ## Build environment (macOS, Apple Silicon)
 - No native toolchain is installed (/usr/local/ps2dev does not exist).
   Builds run in Docker through Colima (`colima start --vm-type vz --mount-type virtiofs --cpu 6 --memory 8`).
-- Image: `.devcontainer/Dockerfile`, pinned to `ps2dev/ps2dev:v2.0.0` by digest
-  (native arm64, gcc 15.2.0). It only adds `make`, which the base image lacks.
+- Image: `.devcontainer/Dockerfile`, pinned by digest to
+  `ps2dev/ps2dev@sha256:769c4dd6…d02d` (ps2dev:latest built 3 Nov 2026,
+  native arm64, gcc 15.2.0). It only adds `make`, which the base image lacks.
   Bump the pin on purpose, never float on `latest`.
+- It's the same pin as the shared toolchain for all the user's PS2 projects,
+  `~/Development/ps2-toolchain` (its README says how to bump). Bump both
+  together, and quote `tools/bench.sh all` before and after in the commit.
+  The previous pin, `ps2dev/ps2dev:v2.0.0` (May 2026), had a ps2-packer that
+  left a packed section's trailing zero bytes unwritten (fixed in
+  ps2dev/ps2-packer#46). wipeout-ps2 doesn't pack its ELF, so it wasn't hit.
 - Compiler: `mips64r5900el-ps2-elf-gcc`. Environment variables: PS2DEV, PS2SDK, GSKIT.
 - The repo is mounted at the same path in the container as on the Mac, so paths in
   errors and debug info match the host. The devcontainer does the same.
