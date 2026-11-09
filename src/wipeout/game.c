@@ -190,6 +190,15 @@ const game_def_t def = {
 	},
 
 	.credits = {
+		"#PLAYSTATION 2 VERSION",
+		"#RE ENGINEERING",
+			"FOX015",
+			"WITH CLAUDE CODE",
+		"#SPECIAL THANKS TO",
+			"PS2DEV TEAM",
+			"PCSX2 TEAM",
+			"ARMSX2 TEAM",
+			"JNMARTIN84",
 		"#DREAMCAST VERSION",
 		"#PROGRAMMERS",
 			"JNMARTIN84",

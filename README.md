@@ -1,87 +1,73 @@
-***
+# wipEout for PlayStation 2
 
-# Wipeout-Rewrite port for Dreamcast (updated 2025/10/13)
+A native PlayStation 2 port of wipEout, built on Dominic Szablewski's
+[wipeout-rewrite](https://github.com/phoboslab/wipeout-rewrite) by way of
+jnmartin84's Dreamcast port, [wipeout-dc](https://github.com/jnmartin84/wipeout-dc),
+which this repo is forked from.
 
-***
-Wipeout-DC is a port of the Wipeout Rewrite project by Dominic Szablewski which can be found at:
+## Status
 
-https://github.com/phoboslab/wipeout-rewrite
-***
+Work in progress. In PCSX2 and ARMSX2 the whole game runs: menus, races,
+textures and blending, sound effects, music with the PS1's tunnel reverb, and
+saves on the memory card. It also runs on a real PS2 over ps2link. Next up:
+loading the game data from the console's own drive, and booting without
+ps2link.
 
-***
-This is the final release for v2. It no longer requires custom KOS to be built.
+The plan, stage by stage, is in [ROADMAP.md](ROADMAP.md). Which features come
+from the PS1 game, the rewrite, the Dreamcast port and this port is in
+[docs/FEATURES.md](docs/FEATURES.md).
 
-If you have cloned/built Wipeout prior to 2025/10/13, you will need to grab a fresh copy of KOS `v2.2.1` tag from the official repo.
+## Game data
 
-Current feature set includes: 24-bit color depth, extended draw distance, 16:9 anamorphic widescreen available,
+The game data isn't included. This port uses the data from phoboslab's
+wipeout-rewrite download (see the end of
+[Rewriting wipEout](https://phoboslab.org/log/2023/08/rewriting-wipeout)).
+Unzip it into a `wipeout/` folder at the top of the repo (it's gitignored),
+then convert the music to the PS2's sound format:
 
-reimplemented screen shake, restored PSX-original collision behavior, more.
+    tools/convert_music.sh
 
-Feature complete, almost 100% 60 FPS (100% is a strong guarantee), full music and sound,
+## Building
 
-VMU save/load for settings and high scores (6 blocks required), full input remapping support for Dreamcast controller.
-***
+The toolchain runs in Docker (on a Mac, through Colima). The image is pinned
+in `.devcontainer/Dockerfile`.
 
-## Download the disc image:
+    docker build -t wipeout-ps2-dev .devcontainer
+    docker run --rm -v $PWD:$PWD -w $PWD wipeout-ps2-dev make
 
-***
-Go to the `Releases` section of the Github repo. A `tgz` file is provided with `CDI` and some cover art in various formats.
+That builds `wipeout.elf`. Build options:
+- `VIDEO=vga|480p|480i`: display output (default `vga`, 640x480).
+- `LOG=net`: send the log over ps2link instead of the serial port.
+- `BENCH=1` / `BENCH=all`: a benchmark that races one lap by itself.
 
-https://github.com/jnmartin84/wipeout-dc/releases/tag/v2-final
+`make -f Makefile.dc` still builds the Dreamcast version (KOS v2.2.1).
 
-Note that playing in emulation is not supported. If you run into trouble and need a solution, buy a Dreamcast.
+## Running
 
-If you have a Dreamcast but you're using a GDEMU, you're also out of luck. I don't own one. I will never own one. I can't help.
+- **In an emulator** (PCSX2 or ARMSX2 with HostFs on): open `wipeout.elf`. The
+  game reads its data from `host:wipeout/`, next to the ELF.
+  `tools/build_and_run.sh . "frames:"` builds, launches and follows the log.
+- **On a PS2**: boot ps2link, then from the repo folder:
 
-If you file a Github issue related to emulation or GDEMU, I will close it without reading.
-***
+      ps2client -h <ps2 ip> execee host:wipeout.elf
 
-#### Default controls:
+## Controls
 
-***
-    dpad / analog stick up - nose down
-    dpad / analog stick down - nose up
-    dpad / analog stick left - turn left
-    dpad / analog stick right - turn right
-    L trigger - left air brake
-    R trigger - right air brake
-    A button - thrust / select
-    X button - weapon
-    Y button - view change
+| PS2 pad | Action |
+|---|---|
+| D-pad / left stick | Steer, nose up and down |
+| Cross | Thrust, select |
+| Square | Fire |
+| Triangle | Change view |
+| L2 / R2 | Left and right airbrakes |
 
-These may be changed in the controls menu, along with the sensitivty of the analog stick control.
-***
+The controls can be remapped in the game's options.
 
-##### Available video menu options
-`Display` - `4:3` / `16:9 anamorphic`; standard aspect ratio or 16:9 for modern displays
+## Credits
 
-`Texture Filtering` - `on` for bilinear filtering, `off` for point sampling.
-
-***
-
-#### Bonus menu
-
-***
-
-enable Rapier Class and bonus circuit.
-***
-
-### How to build
-
-***
-Setup Dreamcast compiler.
-
-Clone KOS from the official repo. Check out the `v2.2.1` tag.
-
-Build KOS.
-
-From `wipeout-rewrite` repo directory, run `make` followed by `make cdi` or `make dcload` depending on how you are playing.
-
-Data files are not provided. They can be extracted from the CDI file or the original data can be sourced and the music converted according to the notes in `HOWTO.md` .
-
-Enjoy. - *jnmartin84*
-
-
-***
-***
-***
+The original game is by Psygnosis (1995). wipeout-rewrite is by Dominic
+Szablewski (phoboslab). The Dreamcast port is by jnmartin84 and contributors.
+The PS2 port has been built with Claude Code using
+[ps2sdk](https://github.com/ps2dev/ps2sdk) and
+[gsKit](https://github.com/ps2dev/gsKit). The full list is in the game's
+credits.
