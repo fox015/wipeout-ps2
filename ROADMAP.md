@@ -189,9 +189,36 @@ sub-stage is its own branch, PR and tag (`stage-9.1` ...).
     investigation below found the same), so a frame that's fine in PCSX2 can
     still be GS-bound on a console. Compare render time with and without
     drawing.
-  - `make BENCH=1 LOG=net` on the console, for repeatable figures, and the
-    same for the `stage-10.1`–`stage-10.3` tags, so stage 10's gains are
-    measured on hardware.
+  - Benchmarks: ✅ (10 Nov 2026). `make BENCH=all LOG=net` builds of main
+    (e77c064) and of the `stage-8-baseline`, `stage-10.1`, `stage-10.2` and
+    `stage-10.3` points, each with 9.1's alignment fix, the network log and
+    the `bench.txt` writer added, all built with the same toolchain image.
+    Run back to back from `host:` with `ps2client reset` between runs. Two
+    runs of main agree to 0.01–0.03 ms a frame per circuit. Over all seven
+    circuits, weighted by frames (budget 16.7 ms):
+
+    | Build | Lap work a frame | Lap frames over budget | Intro work | Intro frames over budget |
+    |---|---|---|---|---|
+    | stage 8 | 30.65 ms | 92.9% | 35.01 ms | 90.3% |
+    | 10.1 | 13.40 ms | 20.1% | 14.15 ms | 29.0% |
+    | 10.2 | 12.75 ms | 14.5% | 13.67 ms | 21.5% |
+    | 10.3 | 11.09 ms | 6.4% | 12.81 ms | 15.5% |
+    | main | 11.16 ms | 6.8% | 12.90 ms | 16.3% |
+
+    - track02's lap: 25.47 → 11.68 → 11.09 → 9.40 → 9.47 ms. ARMSX2
+      estimates 5.37 ms, so hardware takes about 1.75× its figure. Laps run
+      at 81–106 fps uncapped (PCSX2: 103–137).
+    - 10.2's REGLIST packets, slightly slower in PCSX2, save 0.65 ms on
+      hardware.
+    - In 10.1 and 10.2 most laps have a 56–173 ms worst frame (the QOA music
+      decode); from 10.3 none goes past 40 ms.
+    - main is 0.07 ms slower than 10.3, more than the run-to-run noise. Not
+      investigated.
+    - What's left over budget is whole sections, not spikes: the slowest
+      average 18–20 ms (track02 215–224, track04 211–215, track12's
+      start line, track10 258–263). Worst laps: track10 (15% over budget),
+      track12 (10%); worst intro: track08 (74%). This is the load stages 11
+      and 12 are for.
 
 ### 10. Performance: the C path (PATH3)
 Every drawing packet is built by the EE in C and DMA'd from main RAM straight to
